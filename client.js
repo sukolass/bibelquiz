@@ -1,6 +1,12 @@
 document.addEventListener('DOMContentLoaded', () => {
-    const socket = io();
-    window.socket = socket; // Mache den Socket global verfügbar für bibelquiz.js
+    // KORREKTUR: Fange Fehler ab, falls socket.io nicht geladen werden kann (z.B. auf GitHub Pages)
+    try {
+        const socket = io();
+        window.socket = socket; // Mache den Socket global verfügbar für bibelquiz.js
+    } catch (e) {
+        console.warn("Socket.io konnte nicht initialisiert werden. Starte im Einzelspieler-Modus.", e.message);
+        // Das Fehlen von `window.socket` signalisiert bibelquiz.js, den Einzelspieler-Modus zu starten.
+    }
 
     // --- DOM-Elemente ---
     const loginView = document.getElementById('login-view');

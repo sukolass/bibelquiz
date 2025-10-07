@@ -926,10 +926,8 @@ document.addEventListener('mainScriptReady', async () => {
     if (success) {
         // Starte den Einzelspielermodus standardmäßig, wenn die Verse geladen sind.
         // Dies wird von client.js überschrieben, wenn der Multiplayer-Modus gewählt wird.
-        // NEU: Wenn im Multiplayer, sende "bereit"-Signal an den Server.
-        if (window.socket && window.socket.connected) {
-            window.socket.emit('bibleQuiz:clientIsReady');
-        }
+        // KORREKTUR: Das 'clientIsReady' Event wird jetzt in client.js gesendet,
+        // um die Logik sauber zu trennen. Hier wird nur noch der Standardmodus gestartet.
         startBibleQuizSinglePlayer();
     }
 });
