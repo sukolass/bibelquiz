@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bibel-Quiz</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <!-- Login-Ansicht -->
+    <div id="login-view" class="view active">
+        <h1>Willkommen beim Bibel-Quiz!</h1>
+        <input type="text" id="name-input" placeholder="Dein Name">
+        <button id="login-button">Beitreten</button>
+        <button id="singleplayer-button">Einzelspieler</button>
+    </div>
+
+    <!-- Lobby-Ansicht -->
+    <div id="lobby-view" class="view">
+        <h2>Lobby</h2>
+        <!-- NEU: Container für Host-Informationen -->
+        <div id="host-info" class="hidden">
+            <h3>Du bist der Host!</h3>
+            <p>Andere Spieler im selben WLAN/Hotspot können beitreten über:</p>
+            <div id="host-addresses" class="address-box"></div>
+            <p>Teile einen der Links mit deinen Freunden.</p>
+        </div>
+        <div id="player-list-container">
+            <h3>Spieler:</h3>
+            <ul id="player-list"></ul>
+        </div>
+        <button id="start-game-button" class="hidden">Spiel starten</button>
+    </div>
+
+    <!-- Bibelquiz-Ansicht (dein bestehendes HTML) -->
+    <div id="bible-quiz-view" class="view">
+        <h1>Bibel-Quiz</h1>
+        <div class="quiz-container">
+            <!-- Linke Spalte: Tipp-Eingabe -->
+            <div class="quiz-input-column">
+                <!-- KORREKTUR: Die Tabs werden entfernt und alle Steuerelemente in einem Fieldset zusammengefasst -->
+                <fieldset id="guess-controls">
+                    <legend>Dein Tipp</legend>
+                    <!-- NEUE ANORDNUNG: Buch/Kapitel/Vers jetzt oben -->
+                    <fieldset class="sub-fieldset">
+                        <legend>Buch, Kapitel, Vers</legend>
+                        <!-- ZURÜCK ZUM DROPDOWN: Buch-Auswahl -->
+                        <select id="book-select" class="quiz-select"></select>
+                        <div class="chapter-verse-selector">
+                            <select id="chapter-select" class="quiz-select"></select>
+                            <select id="verse-select" class="quiz-select"></select>
+                        </div>
+                    </fieldset>
+                    <!-- NEUE ANORDNUNG: Testament-Schalter jetzt hier -->
+                    <fieldset class="sub-fieldset">
+                        <legend>Testament</legend>
+                        <div class="testament-switch">
+                            <input type="radio" id="testament-at" name="testament" value="AT" checked>
+                            <label for="testament-at">AT</label>
+                            <input type="radio" id="testament-nt" name="testament" value="NT">
+                            <label for="testament-nt">NT</label>
+                        </div>
+                    </fieldset>
+                    <!-- NEU: Slider für Buch, Kapitel und Vers -->
+                    <fieldset class="sub-fieldset">
+                        <legend>Schnellnavigation via Slider</legend>
+                        <!-- Buch Slider -->
+                        <div class="slider-container">
+                            <label for="book-slider">Buch:</label>
+                            <output for="book-slider" id="book-slider-output">1</output>
+                            <div class="slider-wrapper">
+                                <span class="range-limit" id="book-slider-min">1</span>
+                                <input type="range" id="book-slider" min="1" value="1" class="detail-slider">
+                                <span class="range-limit" id="book-slider-max">66</span>
+                            </div>
+                        </div>
+                        <!-- Kapitel Slider -->
+                        <div class="slider-container">
+                            <label for="chapter-slider">Kapitel:</label>
+                            <output for="chapter-slider" id="chapter-slider-output">1</output>
+                            <div class="slider-wrapper">
+                                <span class="range-limit" id="chapter-slider-min">1</span>
+                                <input type="range" id="chapter-slider" min="1" value="1" class="detail-slider">
+                                <span class="range-limit" id="chapter-slider-max">50</span>
+                            </div>
+                        </div>
+                        <!-- Vers Slider (wird dynamisch befüllt) -->
+                        <div class="slider-container">
+                            <label for="verse-slider">Vers:</label>
+                            <output for="verse-slider" id="verse-slider-output">1</output>
+                            <div class="slider-wrapper">
+                                <span class="range-limit" id="verse-slider-min">1</span>
+                                <input type="range" id="verse-slider" min="1" value="1" class="detail-slider">
+                                <span class="range-limit" id="verse-slider-max">31</span>
+                            </div>
+                        </div>
+                    </fieldset>
+                    <fieldset>
+                        <legend>Position (Gesamt)</legend>
+                        <div class="position-controls">
+                            <label for="position-input">Position:</label>
+                            <input type="number" id="position-input" min="1" value="1">
+                            <label id="total-verses-label">/ 31102</label>
+                        </div>
+                        <input type="range" id="position-slider" min="1" value="1">
+                    </fieldset>
+                </fieldset>
+                <div class="quiz-actions">
+                    <button id="guess-button">Tipp abgeben</button>
+                     <button id="new-verse-button" style="display: none;">Neuer Vers (Einzelspieler)</button>
+                </div>
+            </div>
+            <!-- Rechte Spalte: Anzeige und Ergebnisse -->
+            <div class="quiz-display-column" id="verse-display-section">
+                <fieldset>
+                    <legend>Zu erratender Vers</legend>
+                    <p id="verse-text-display" class="verse-display">Lade Verse...</p>
+                </fieldset>
+                <fieldset>
+                    <legend>Feedback & Ergebnisse</legend>
+                    <div id="feedback-message"></div>
+                    <canvas id="feedback-canvas" width="600" height="200"></canvas>
+                    <div id="stats-display"></div>
+                </fieldset>
+                <div class="quiz-actions">
+                    <!-- Host-spezifische Buttons -->
+                    <button id="host-next-round-button" style="display: none;">Nächste Runde</button>
+                    <button id="host-reset-game-button" style="display: none;">Spiel Neustarten</button>
+                </div>
+                <!-- NEU: Schalter für die Kontextansicht -->
+                <div class="quiz-controls" style="margin-top: 15px;">
+                    <label for="show-context-button">Kontext erneut anzeigen</label>
+                    <button id="show-context-button">Kontext anzeigen</button>
+                </div>
+        </div>
+    </div>
+
+    <!-- NEU: Kontext-Ansicht -->
+    <div id="context-view" class="view" style="display: none;">
+        <div id="context-header">
+            <h2 id="context-title">Kapitelkontext</h2>
+            <button id="close-context-button" class="close-button">&times;</button>
+        </div>
+        <div id="context-content">
+            <div id="context-text"></div>
+        </div>
+        <div id="context-nav">
+            <button id="prev-chapter-button">&laquo; Vorheriges Kapitel</button>
+            <button id="next-chapter-button">Nächstes Kapitel &raquo;</button>
+        </div>
+    </div>
+
+
+    <!-- Skripte -->
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="client.js"></script>
+    <script src="bibelquiz.js"></script>
+</body>
+</html>
