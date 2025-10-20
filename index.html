@@ -35,6 +35,21 @@
 
     <!-- Bibelquiz-Ansicht (dein bestehendes HTML) -->
     <div id="bible-quiz-view" class="view">
+        <!-- NEU (Kapitel-Quiz): Auswahl des Spielmodus -->
+        <div id="game-mode-selection" style="display: none; text-align: center; margin-bottom: 1rem;">
+            <fieldset>
+                <legend>Wähle einen Spielmodus</legend>
+                <label>
+                    <input type="radio" name="game-mode" value="guessVerse" checked>
+                    Vers erraten
+                </label>
+                <label>
+                    <input type="radio" name="game-mode" value="guessChapter">
+                    Kapitel anhand von Überschriften erraten
+                </label>
+            </fieldset>
+        </div>
+
         <h1>Bibel-Quiz</h1>
         <div class="quiz-container">
             <!-- Linke Spalte: Tipp-Eingabe -->
@@ -42,14 +57,24 @@
                 <!-- KORREKTUR: Die Tabs werden entfernt und alle Steuerelemente in einem Fieldset zusammengefasst -->
                 <fieldset id="guess-controls">
                     <legend>Dein Tipp</legend>
+
                     <!-- NEUE ANORDNUNG: Buch/Kapitel/Vers jetzt oben -->
                     <fieldset class="sub-fieldset">
                         <legend>Buch, Kapitel, Vers</legend>
                         <!-- ZURÜCK ZUM DROPDOWN: Buch-Auswahl -->
+                        <!-- NEU (Übungsmodus): Checkbox für den Übungsmodus -->
+                        <div id="practice-mode-container" style="display: none; margin-bottom: 5px;">
+                            <label>
+                                <input type="checkbox" id="practice-mode-checkbox"> Nur dieses Buch üben
+                            </label>
+                        </div>
                         <select id="book-select" class="quiz-select"></select>
                         <div class="chapter-verse-selector">
                             <select id="chapter-select" class="quiz-select"></select>
-                            <select id="verse-select" class="quiz-select"></select>
+                            <!-- NEU (Kapitel-Quiz): Container für die Vers-Auswahl, um sie auszublenden -->
+                            <div id="verse-select-container">
+                                <select id="verse-select" class="quiz-select"></select>
+                            </div>
                         </div>
                     </fieldset>
                     <!-- NEUE ANORDNUNG: Testament-Schalter jetzt hier -->
@@ -64,41 +89,46 @@
                     </fieldset>
                     <!-- NEU: Slider für Buch, Kapitel und Vers -->
                     <fieldset class="sub-fieldset">
-                        <legend>Schnellnavigation via Slider</legend>
-                        <!-- Buch Slider -->
-                        <div class="slider-container">
-                            <label for="book-slider">Buch:</label>
-                            <output for="book-slider" id="book-slider-output">1</output>
-                            <div class="slider-wrapper">
-                                <span class="range-limit" id="book-slider-min">1</span>
-                                <input type="range" id="book-slider" min="1" value="1" class="detail-slider">
-                                <span class="range-limit" id="book-slider-max">66</span>
+                        <!-- NEU (Kapitel-Quiz): Container für die Slider, um sie auszublenden -->
+                        <div id="verse-slider-container">
+                            <legend>Schnellnavigation via Slider</legend>
+                            <!-- Buch Slider -->
+                            <div class="slider-container">
+                                <label for="book-slider">Buch:</label>
+                                <output for="book-slider" id="book-slider-output">1</output>
+                                <div class="slider-wrapper">
+                                    <span class="range-limit" id="book-slider-min">1</span>
+                                    <input type="range" id="book-slider" min="1" value="1" class="detail-slider">
+                                    <span class="range-limit" id="book-slider-max">66</span>
+                                </div>
                             </div>
-                        </div>
-                        <!-- Kapitel Slider -->
-                        <div class="slider-container">
-                            <label for="chapter-slider">Kapitel:</label>
-                            <output for="chapter-slider" id="chapter-slider-output">1</output>
-                            <div class="slider-wrapper">
-                                <span class="range-limit" id="chapter-slider-min">1</span>
-                                <input type="range" id="chapter-slider" min="1" value="1" class="detail-slider">
-                                <span class="range-limit" id="chapter-slider-max">50</span>
+                            <!-- Kapitel Slider -->
+                            <div class="slider-container">
+                                <label for="chapter-slider">Kapitel:</label>
+                                <output for="chapter-slider" id="chapter-slider-output">1</output>
+                                <div class="slider-wrapper">
+                                    <span class="range-limit" id="chapter-slider-min">1</span>
+                                    <input type="range" id="chapter-slider" min="1" value="1" class="detail-slider">
+                                    <span class="range-limit" id="chapter-slider-max">50</span>
+                                </div>
                             </div>
-                        </div>
-                        <!-- Vers Slider (wird dynamisch befüllt) -->
-                        <div class="slider-container">
-                            <label for="verse-slider">Vers:</label>
-                            <output for="verse-slider" id="verse-slider-output">1</output>
-                            <div class="slider-wrapper">
-                                <span class="range-limit" id="verse-slider-min">1</span>
-                                <input type="range" id="verse-slider" min="1" value="1" class="detail-slider">
-                                <span class="range-limit" id="verse-slider-max">31</span>
+                            <!-- Vers Slider (wird dynamisch befüllt) -->
+                            <!-- NEU: Eigener Container für den Vers-Slider -->
+                            <div id="verse-slider-wrapper" class="slider-container">
+                                <label for="verse-slider">Vers:</label>
+                                <output for="verse-slider" id="verse-slider-output">1</output>
+                                <div class="slider-wrapper">
+                                    <span class="range-limit" id="verse-slider-min">1</span>
+                                    <input type="range" id="verse-slider" min="1" value="1" class="detail-slider">
+                                    <span class="range-limit" id="verse-slider-max">31</span>
+                                </div>
                             </div>
                         </div>
                     </fieldset>
                     <fieldset>
                         <legend>Position (Gesamt)</legend>
-                        <div class="position-controls">
+                        <!-- NEU (Kapitel-Quiz): Container für die Positions-Steuerung, um sie auszublenden -->
+                        <div id="position-controls" class="position-controls">
                             <label for="position-input">Position:</label>
                             <input type="number" id="position-input" min="1" value="1">
                             <label id="total-verses-label">/ 31102</label>
@@ -108,7 +138,7 @@
                 </fieldset>
                 <div class="quiz-actions">
                     <button id="guess-button">Tipp abgeben</button>
-                     <button id="new-verse-button" style="display: none;">Neuer Vers (Einzelspieler)</button>
+                     <button id="new-verse-button" style="display: none;">Neue Runde</button>
                 </div>
             </div>
             <!-- Rechte Spalte: Anzeige und Ergebnisse -->

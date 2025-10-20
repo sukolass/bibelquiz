@@ -5,6 +5,14 @@ document.addEventListener('mainScriptReady', async () => {
     // KORREKTUR: Alle DOM-Elemente und globalen Variablen werden zuerst deklariert.
     // ---------------------------------------------------------------------------------
     // --- 1. DOM-Elemente und globale Variablen ---
+        // NEU (Kapitel-Quiz): Elemente für die Spielmodus-Auswahl
+        const gameModeSelection = document.getElementById('game-mode-selection');
+        const gameModeRadios = document.querySelectorAll('input[name="game-mode"]');
+
+        // NEU (Übungsmodus): Elemente für den Übungsmodus
+        const practiceModeContainer = document.getElementById('practice-mode-container');
+        const practiceModeCheckbox = document.getElementById('practice-mode-checkbox');
+
         // Bestehende Elemente
         const bibleQuizView = document.getElementById('bible-quiz-view');
         const verseTextDisplay = document.getElementById('verse-text-display');
@@ -48,10 +56,14 @@ document.addEventListener('mainScriptReady', async () => {
 
     // --- Bibelquiz State ---
     let allVerses = [];
+    let allHeadings = []; // NEU (Kapitel-Quiz): Array für die Kapitelüberschriften
     let currentVerse = null;
+    let currentChapterHeadings = null; // NEU (Kapitel-Quiz): Das zu erratende Kapitel
     let gameMode = 'singleplayer'; // 'singleplayer' oder 'multiplayer'
+    let quizMode = 'guessVerse'; // NEU (Kapitel-Quiz): 'guessVerse' oder 'guessChapter'
     let players = {}; // Für den Mehrspielermodus
     let myPlayerId = null; // Eigene Spieler-ID 
+    let isPracticeMode = false; // NEU (Übungsmodus): Flag für den Übungsmodus
     let isUpdating = false; // Flag zur Verhinderung von Endlosschleifen
     let currentContext = { book: null, chapter: null }; // Zustand für die Kontextansicht
     let bookChapterStructure = []; // Struktur für die Kapitelnavigation
@@ -68,7 +80,7 @@ document.addEventListener('mainScriptReady', async () => {
     ];
 
     // DEBUG: Überprüfen, ob alle kritischen Elemente gefunden wurden
-    if (!bibleQuizView || !bookSelect || !positionSlider || !ctx || !contextView || !showContextButton || !hostInfoDiv) {
+    if (!bibleQuizView || !bookSelect || !positionSlider || !ctx || !contextView || !showContextButton || !hostInfoDiv || !gameModeSelection || !practiceModeContainer) {
         console.error('[FATAL] Ein oder mehrere kritische Bibelquiz-Elemente wurden im HTML nicht gefunden. Skript wird angehalten.');
         return;
     }
@@ -165,6 +177,49 @@ document.addEventListener('mainScriptReady', async () => {
         }
     }
 
+    // NEU (Kapitel-Quiz): Funktion zum Laden und Verarbeiten der Kapitelüberschriften
+    async function loadAndParseHeadings() {
+        try {
+            console.log('[Kapitel-Quiz] Lade "headings.txt".');
+            const response = await fetch(`headings.txt?v=${Date.now()}`);
+            if (!response.ok) {
+                // Dies ist kein fataler Fehler, da der andere Spielmodus noch funktionieren kann.
+                console.warn(`[Kapitel-Quiz] Datei 'headings.txt' nicht gefunden (Status: ${response.status}). Der "Kapitel erraten"-Modus ist nicht verfügbar.`);
+                return false;
+            }
+            const text = await response.text();
+            const lines = text.split(/\r?\n/);
+
+            allHeadings = lines.map((line, index) => {
+                if (!line.trim()) return null;
+                // KORREKTUR: Trenne nur die ersten beiden Teile (Buch;Kapitel) vom Rest (Überschriften)
+                const parts = line.split(';', 3);
+                if (parts.length !== 3) {
+                    console.warn(`[Kapitel-Quiz] Zeile übersprungen (zu wenige Teile): "${line}"`);
+                    return null;
+                }
+
+                const book = parts[0].trim();
+                const chapter = parseInt(parts[1], 10);
+                // KORREKTUR: Verwende "||" als Trennzeichen für die Überschriften
+                const headingsText = parts[2];
+                const headings = headingsText.split('||').map(h => h.trim()).filter(Boolean);
+
+                if (!book || isNaN(chapter) || headings.length === 0) {
+                    console.warn(`[Kapitel-Quiz] Zeile übersprungen (ungültige Daten): "${line}"`);
+                    return null;
+                }
+                return { id: `${book}-${chapter}`, book, chapter, headings };
+            }).filter(Boolean);
+
+            console.log(`[Kapitel-Quiz] ${allHeadings.length} gültige Kapitel-Überschriften geladen.`);
+            return allHeadings.length > 0;
+        } catch (error) {
+            console.error("[Kapitel-Quiz] Fehler beim Laden der 'headings.txt':", error);
+            return false;
+        }
+    }
+
     // --- UI-Logik ---
     function setInitialSelection() {
         // Setze auf AT, 1. Mose
@@ -183,10 +238,43 @@ document.addEventListener('mainScriptReady', async () => {
     }
 
     // --- Spiellogik ---
-    function displayNewVerse() {
-        if (allVerses.length === 0) return;
-        currentVerse = allVerses[Math.floor(Math.random() * allVerses.length)];
-        verseTextDisplay.textContent = currentVerse.text;
+    function startNewRound() {
+        if (quizMode === 'guessVerse') {
+            displayNewVerse();
+        } else if (quizMode === 'guessChapter') {
+            displayNewChapterHeadings();
+        }
+    }
+
+    function displayNewChapterHeadings() {
+        let chapterPool = allHeadings;
+        // NEU (Übungsmodus): Filtere den Pool, wenn der Übungsmodus aktiv ist
+        if (isPracticeMode) {
+            const practiceBook = bookSelect.value;
+            chapterPool = allHeadings.filter(h => h.book === practiceBook);
+        }
+
+        if (chapterPool.length === 0) {
+            if (isPracticeMode) {
+                verseTextDisplay.textContent = `Für das Buch "${bookSelect.value}" wurden keine Überschriften gefunden.`;
+            } else {
+                verseTextDisplay.textContent = 'Keine Kapitel-Überschriften geladen. Bitte erstelle eine "headings.txt".';
+            }
+            verseTextDisplay.textContent = 'Keine Kapitel-Überschriften geladen. Bitte erstelle eine "headings.txt".';
+            return;
+        }
+
+        // Wähle ein zufälliges Kapitel aus dem (gefilterten) Pool
+        currentChapterHeadings = chapterPool[Math.floor(Math.random() * chapterPool.length)];
+
+
+        currentVerse = null; // Sicherstellen, dass der alte Zustand gelöscht ist
+
+        // Formatiere die Überschriften als Liste
+        let headingsHtml = "<h3>Welches Kapitel hat diese Überschriften?</h3><ul>";
+        currentChapterHeadings.headings.forEach(h => { headingsHtml += `<li>${h}</li>`; });
+        headingsHtml += "</ul>";
+        verseTextDisplay.innerHTML = headingsHtml;
 
         feedbackMessage.textContent = "";
         feedbackMessage.className = "";
@@ -201,9 +289,35 @@ document.addEventListener('mainScriptReady', async () => {
         setInitialSelection();
     }
 
+    function displayNewVerse() {
+        let versePool = allVerses;
+        // NEU (Übungsmodus): Filtere den Pool, wenn der Übungsmodus aktiv ist
+        if (isPracticeMode) {
+            const practiceBook = bookSelect.value;
+            versePool = allVerses.filter(v => v.book === practiceBook);
+        }
+
+        if (versePool.length === 0) return;
+
+        // Wähle einen zufälligen Vers aus dem (gefilterten) Pool
+        currentVerse = versePool[Math.floor(Math.random() * versePool.length)];
+        currentChapterHeadings = null; // Sicherstellen, dass der alte Zustand gelöscht ist
+        verseTextDisplay.textContent = currentVerse.text;
+
+        feedbackMessage.textContent = "";
+        feedbackMessage.className = "";
+        statsDisplay.textContent = "Mache einen Tipp, um die Entfernung zu sehen.";
+        guessButton.disabled = false;
+        clearCanvas();
+        
+        contextView.style.display = 'none';
+
+        setInitialSelection();
+    }
+
     function makeGuess() {
         // Im Multiplayer-Modus wird der geheime Vers nicht auf dem Client gespeichert.
-        if (gameMode === 'singleplayer' && !currentVerse) return;
+        if (gameMode === 'singleplayer' && !currentVerse && !currentChapterHeadings) return;
 
         const guessedId = parseInt(positionInput.value, 10);
         if (isNaN(guessedId) || guessedId < 1 || guessedId > allVerses.length) {
@@ -213,39 +327,80 @@ document.addEventListener('mainScriptReady', async () => {
         }
 
         if (gameMode === 'singleplayer') {
-            const guessedVerse = allVerses.find(v => v.id === guessedId);
-            const actualVerse = currentVerse;
-            const isCorrect = (guessedId === actualVerse.id);
-            const distance = Math.abs(actualVerse.id - guessedId);
-            const totalVerses = allVerses.length;
+            if (quizMode === 'guessVerse') {
+                const guessedVerse = allVerses.find(v => v.id === guessedId);
+                const actualVerse = currentVerse;
+                const isCorrect = (guessedId === actualVerse.id);
+                const distance = Math.abs(actualVerse.id - guessedId);
+                const totalVerses = allVerses.length;
 
-            let points;
-            if (distance === 0) {
-                points = 100;
-            } else {
-                const percentageError = distance / totalVerses;
-                let distancePoints = Math.round(50 * (1 - Math.sqrt(percentageError)));
-                if (distancePoints < 0) distancePoints = 0;
+                // NEU (Übungsmodus): Passe die Punkte an, wenn ein Buch geübt wird
+                const bookPoints = (isPracticeMode || guessedVerse.book !== actualVerse.book) ? 0 : 15;
+                const testamentPoints = (isPracticeMode || guessedVerse.testament !== actualVerse.testament) ? 0 : 10;
+                const chapterPoints = (isPracticeMode || guessedVerse.book !== actualVerse.book || guessedVerse.chapter !== actualVerse.chapter) ? 0 : 25;
 
-                let contextPoints = 0;
-                if (guessedVerse.testament === actualVerse.testament) {
-                    contextPoints += 10;
-                    if (guessedVerse.book === actualVerse.book) {
-                        contextPoints += 15;
-                        if (guessedVerse.chapter === actualVerse.chapter) {
-                            contextPoints += 25;
-                        }
-                    }
+
+                let points;
+                if (distance === 0) {
+                    points = 100;
+                } else {
+                    const percentageError = distance / totalVerses;
+                    let distancePoints = Math.round(50 * (1 - Math.sqrt(percentageError)));
+                    if (distancePoints < 0) distancePoints = 0;
+
+                    // NEU (Übungsmodus): Passe die Punkteberechnung an
+                    const contextPoints = testamentPoints + bookPoints + chapterPoints;
+                    points = Math.round(distancePoints + contextPoints);
+                    if (points > 99) points = 99; // Cap points for non-perfect guesses
                 }
-                points = distancePoints + contextPoints;
-            }
 
-            feedbackMessage.textContent = isCorrect ? "Richtig!" : `Falsch. Die richtige Antwort war: ${actualVerse.book} ${actualVerse.chapter},${actualVerse.verse_num}`;
-            feedbackMessage.className = isCorrect ? "feedback-success" : "feedback-error";
-            statsDisplay.textContent = `Entfernung: ${distance} Verse. Punkte: ${points}.`;
-            drawFeedback(guessedVerse, actualVerse); 
-            // KORREKTUR: Kontextansicht nach der Runde immer anzeigen
-            showContextView(actualVerse.book, actualVerse.chapter, actualVerse.verse_num);
+                feedbackMessage.textContent = isCorrect ? "Richtig!" : `Falsch. Die richtige Antwort war: ${actualVerse.book} ${actualVerse.chapter},${actualVerse.verse_num}`;
+                feedbackMessage.className = isCorrect ? "feedback-success" : "feedback-error";
+                statsDisplay.textContent = `Entfernung: ${distance} Verse. Punkte: ${points}.`;
+                drawFeedback(guessedVerse, actualVerse); 
+                showContextView(actualVerse.book, actualVerse.chapter, actualVerse.verse_num);
+
+            } else if (quizMode === 'guessChapter') {
+                // NEU (Kapitel-Quiz): Auswertungslogik für den Kapitel-Modus
+                const guessedInfo = allVerses.find(v => v.id === guessedId); // Wir brauchen den Vers für Buch/Kapitel
+                const actual = currentChapterHeadings;
+                
+                const isCorrect = (guessedInfo.book === actual.book && guessedInfo.chapter === actual.chapter);
+                
+                feedbackMessage.textContent = isCorrect ? "Richtig!" : `Falsch. Die richtige Antwort war: ${actual.book} ${actual.chapter}`;
+                feedbackMessage.className = isCorrect ? "feedback-success" : "feedback-error";
+
+                // NEU (Kapitel-Quiz): Überarbeitetes Punktesystem
+                let points = 0;
+                let feedbackText = "";
+                if (isCorrect) {
+                    points = 100;
+                    feedbackText = "Perfekt! 100 Punkte.";
+                } else {
+                    const bookIsCorrect = guessedInfo.book === actual.book;
+                    if (bookIsCorrect && !isPracticeMode) {
+                        points += 40; // Basispunkte für das richtige Buch
+                    }
+
+                    if (bookIsCorrect) {
+                        const chapterDistance = Math.abs(guessedInfo.chapter - actual.chapter);
+                        const maxDistance = bookChapterStructure.find(b => b.book === actual.book).chapters.length;
+                        // Punkte basierend auf der Nähe, max. 50
+                        let proximityPoints = Math.round(50 * (1 - (chapterDistance / maxDistance)));
+                        if (proximityPoints < 0) proximityPoints = 0;
+                        points += proximityPoints;
+                    }
+                    feedbackText = `Dein Tipp: ${guessedInfo.book} ${guessedInfo.chapter}. Punkte: ${Math.round(points)}.`;
+                }
+                statsDisplay.textContent = feedbackText;
+                
+                // Zeige den Kontext des richtigen Kapitels an
+                showContextView(actual.book, actual.chapter);
+                // Im Kapitel-Modus gibt es keine Visualisierung auf der Zeitleiste.
+                clearCanvas();
+            } else {
+                // Multiplayer-Logik für Kapitel-Quiz (noch nicht implementiert)
+            }
 
             guessButton.disabled = true;
         } else {
@@ -265,7 +420,7 @@ document.addEventListener('mainScriptReady', async () => {
         currentContext = { book, chapter: parseInt(chapter, 10) };
 
         contextTitle.textContent = `${book} ${chapter}`;
-        const chapterVerses = allVerses.filter(v => v.book === book && v.chapter === parseInt(chapter, 10));
+        const chapterVerses = allVerses.filter(v => v.book === book && v.chapter === parseInt(chapter, 10)).sort((a, b) => a.verse_num - b.verse_num);
         
         let chapterHtml = '';
         chapterVerses.forEach(verse => {
@@ -631,6 +786,23 @@ document.addEventListener('mainScriptReady', async () => {
         slider.nextElementSibling.classList.toggle('active', value === max);
     }
 
+    // NEU (Kapitel-Quiz): UI für den Spielmodus anpassen
+    function setQuizModeUI(mode) {
+        quizMode = mode;
+        const isVerseMode = (mode === 'guessVerse');
+        document.getElementById('position-controls').style.display = isVerseMode ? '' : 'none';
+        document.getElementById('verse-select-container').style.display = isVerseMode ? '' : 'none';
+        document.getElementById('verse-slider-wrapper').style.display = isVerseMode ? '' : 'none';
+    }
+
+    // NEU (Übungsmodus): Event-Listener für die Übungsmodus-Checkbox
+    practiceModeCheckbox.addEventListener('change', (e) => {
+        isPracticeMode = e.target.checked;
+        console.log(`[Übungsmodus] Status geändert auf: ${isPracticeMode}`);
+        // Starte eine neue Runde, um die Änderung sofort wirksam werden zu lassen
+        startNewRound();
+    });
+
     // --- 5. Event Listeners --- 
     testamentRadios.forEach(radio => radio.addEventListener('change', () => {
         if (DEBUG_SYNC) console.log(`[SyncDebug] Event: Testament radio changed to ${radio.value}`);
@@ -713,6 +885,13 @@ document.addEventListener('mainScriptReady', async () => {
         showContextView(currentContext.book, currentContext.chapter, currentVerse?.verse_num);
     });
 
+    // NEU (Kapitel-Quiz): Event-Listener für die Spielmodus-Auswahl
+    gameModeRadios.forEach(radio => radio.addEventListener('change', (e) => {
+        setQuizModeUI(e.target.value);
+        // Starte direkt eine neue Runde im gewählten Modus
+        startNewRound();
+    }));
+
     // NEU: Funktion, um die Host-Informationen in der Lobby anzuzeigen
     function showHostInfo(data) {
         if (!hostInfoDiv || !data || !data.addresses || data.addresses.length === 0) {
@@ -731,7 +910,7 @@ document.addEventListener('mainScriptReady', async () => {
 
 
     guessButton.addEventListener('click', makeGuess);
-    newVerseButton.addEventListener('click', displayNewVerse);
+    newVerseButton.addEventListener('click', startNewRound);
 
     // NEU: Event-Listener für "Nächste Runde"
     if (hostNextRoundButton) {
@@ -762,7 +941,12 @@ document.addEventListener('mainScriptReady', async () => {
         if (window.showView) window.showView('bible-quiz-view');
         // KORREKTUR: Host-Info ausblenden, wenn der Einzelspielermodus gestartet wird.
         if (hostInfoDiv) hostInfoDiv.classList.add('hidden');
-        displayNewVerse();
+        // NEU (Kapitel-Quiz): Zeige die Modus-Auswahl an
+        if (gameModeSelection) gameModeSelection.style.display = 'block';
+        // NEU (Übungsmodus): Zeige die Übungsmodus-Auswahl an
+        if (practiceModeContainer) practiceModeContainer.style.display = 'block';
+        setQuizModeUI(document.querySelector('input[name="game-mode"]:checked').value);
+        startNewRound();
     }
 
     // --- Multiplayer-Setup ---
@@ -771,6 +955,11 @@ document.addEventListener('mainScriptReady', async () => {
         if (window.socket._hasBibleQuizListeners) return;
 
         // KORREKTUR: Host-Info standardmäßig ausblenden, wenn der MP-Modus betreten wird.
+        // NEU (Kapitel-Quiz): Spielmodus-Auswahl im Multiplayer ausblenden (wird vom Host gesteuert)
+        if (gameModeSelection) gameModeSelection.style.display = 'none';
+        // NEU (Übungsmodus): Übungsmodus-Auswahl im Multiplayer ausblenden
+        if (practiceModeContainer) practiceModeContainer.style.display = 'none';
+
         if (hostInfoDiv) hostInfoDiv.classList.add('hidden');
 
         // NEU: Event, das dem Client mitteilt, dass er der Host ist und die IP-Infos anzeigt
@@ -922,12 +1111,19 @@ document.addEventListener('mainScriptReady', async () => {
         if (hostResetGameButton) hostResetGameButton.style.display = 'none';
     }
 
-    const success = await loadAndParseVerses();
-    if (success) {
+    // Lade beide Datensätze parallel
+    const [versesSuccess, headingsSuccess] = await Promise.all([
+        loadAndParseVerses(),
+        loadAndParseHeadings()
+    ]);
+
+    if (versesSuccess) {
         // Starte den Einzelspielermodus standardmäßig, wenn die Verse geladen sind.
         // Dies wird von client.js überschrieben, wenn der Multiplayer-Modus gewählt wird.
         // KORREKTUR: Das 'clientIsReady' Event wird jetzt in client.js gesendet,
         // um die Logik sauber zu trennen. Hier wird nur noch der Standardmodus gestartet.
         startBibleQuizSinglePlayer();
+    } else {
+        verseTextDisplay.textContent = "Fehler: Die Bibelverse konnten nicht geladen werden. Das Spiel kann nicht gestartet werden.";
     }
 });
