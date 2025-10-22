@@ -5,6 +5,131 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Bibel-Quiz</title>
     <link rel="stylesheet" href="style.css">
+    <!-- HINWEIS: Ich habe den <style>-Block aufgeräumt und korrigiert -->
+    <style>
+        /* --- Stil für das Bereichsauswahl-Modal --- */
+        .modal {
+            display: none; /* Standardmäßig ausgeblendet */
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            overflow: auto;
+            background-color: rgba(0,0,0,0.6);
+        }
+        .modal-content {
+            background-color: #e3f2fd; /* Hellblau */
+            color: #212121; /* Dunkler Text für Lesbarkeit */
+            margin: 10% auto;
+            padding: 20px;
+            border: 1px solid #888;
+            width: 80%;
+            max-width: 700px;
+            border-radius: 8px;
+            display: flex;
+            flex-direction: column;
+            max-height: 80vh;
+        }
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid #555;
+            padding-bottom: 10px;
+            margin-bottom: 15px;
+        }
+        .modal-header h2 {
+            margin: 0;
+        }
+        .close-button {
+            color: #555;
+            font-size: 28px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        .close-button:hover,
+        .close-button:focus {
+            color: #000;
+        }
+        #scope-book-list {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+            gap: 8px;
+            overflow-y: auto;
+            padding: 10px;
+            background-color: #bbdefb; /* Etwas dunkleres Blau */
+            border-radius: 4px;
+            flex-grow: 1;
+        }
+        .chapter-summary {
+            border-left: 3px solid #007bff;
+            padding-left: 10px;
+        }
+        /* NEU: Stile für die seitliche Zusammenfassung */
+        #reading-content-wrapper {
+            display: flex;
+            flex-direction: column;
+        }
+        #reading-content-wrapper.left-summary {
+            flex-direction: row;
+            gap: 15px;
+        }
+        #reading-content-wrapper.right-summary {
+            flex-direction: row-reverse;
+            gap: 15px;
+        }
+        #reading-content-wrapper .chapter-summary {
+            flex: 0 0 30%; /* Nimmt 30% der Breite ein, aber wächst/schrumpft nicht */
+            border-left-width: 0; /* Entfernt den linken Rand, wenn seitlich */
+        }
+
+        /* NEU: Stile für die Kontextansicht mit Zusammenfassung */
+        #context-content-wrapper {
+            display: flex;
+            gap: 20px;
+            padding: 10px;
+            overflow-y: auto; /* Erlaubt Scrollen im Inhaltsbereich */
+            flex-grow: 1;
+        }
+        #context-text {
+            flex: 2; /* Nimmt 2/3 des Platzes ein */
+            overflow-y: auto;
+            padding-right: 10px;
+        }
+        #context-summary {
+            flex: 1; /* Nimmt 1/3 des Platzes ein */
+            padding: 15px;
+            border-radius: 5px;
+            font-style: italic;
+            overflow-y: auto;
+        }
+
+        /* NEU: Stile für die Suchfunktion */
+        .search-result-item {
+            padding: 10px;
+            border-bottom: 1px solid #ccc;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        .search-result-item:hover {
+            background-color: #d0eaff;
+        }
+        .search-result-item .ref {
+            font-weight: bold;
+            color: #0056b3;
+            display: block;
+            margin-bottom: 5px;
+        }
+        .search-result-item .text .highlight {
+            background-color: yellow;
+            font-weight: bold;
+        }
+        /* =================================================================== */
+        /* ENDE DES NEUEN CSS-CODES                                            */
+        /* =================================================================== */
+    </style>
 </head>
 <body>
 
@@ -47,6 +172,14 @@
                     <input type="radio" name="game-mode" value="guessChapter">
                     Kapitel anhand von Überschriften erraten
                 </label>
+                <label>
+                    <input type="radio" name="game-mode" value="guessSummary">
+                    Zusammenfassung erraten
+                </label>
+                <label>
+                    <input type="radio" name="game-mode" value="readMode">
+                    Bibel lesen
+                </label>
             </fieldset>
         </div>
 
@@ -62,12 +195,20 @@
                     <fieldset class="sub-fieldset">
                         <legend>Buch, Kapitel, Vers</legend>
                         <!-- ZURÜCK ZUM DROPDOWN: Buch-Auswahl -->
-                        <!-- NEU (Übungsmodus): Checkbox für den Übungsmodus -->
-                        <div id="practice-mode-container" style="display: none; margin-bottom: 5px;">
-                            <label>
-                                <input type="checkbox" id="practice-mode-checkbox"> Nur dieses Buch üben
-                            </label>
-                        </div>
+                    <!-- NEU: Container für die Bereichsauswahl -->
+                    <div id="scope-selection-container" class="control-group" style="display: none;">
+                        <label>Quiz-Bereich:</label>
+                        <button id="open-scope-modal-button" class="button">Bereich auswählen</button>
+                    </div>
+                    <!-- ERSETZT: Alter Übungsmodus-Container -->
+                    <!--
+                    <div id="practice-mode-container" class="control-group" style="display: none;">
+                        <label>
+                            <input type="checkbox" id="practice-mode-checkbox">
+                            Nur aus dem oben ausgewählten Buch üben
+                        </label>
+                    </div>
+                    -->
                         <select id="book-select" class="quiz-select"></select>
                         <div class="chapter-verse-selector">
                             <select id="chapter-select" class="quiz-select"></select>
@@ -136,6 +277,7 @@
                         <input type="range" id="position-slider" min="1" value="1">
                     </fieldset>
                 </fieldset>
+                <!-- NEU: Button-Position geändert für bessere Sichtbarkeit -->
                 <div class="quiz-actions">
                     <button id="guess-button">Tipp abgeben</button>
                      <button id="new-verse-button" style="display: none;">Neue Runde</button>
@@ -144,10 +286,41 @@
             <!-- Rechte Spalte: Anzeige und Ergebnisse -->
             <div class="quiz-display-column" id="verse-display-section">
                 <fieldset>
-                    <legend>Zu erratender Vers</legend>
+                    <legend id="verse-display-legend">Zu erratende Aufgabe</legend>
+                    <!-- NEU: Optionen für den Lese-Modus -->
+                    <div id="reading-options-container" style="display: none; margin-bottom: 10px;">
+                        <label>
+                            <input type="checkbox" id="show-summaries-checkbox">
+                            Zusammenfassungen anzeigen
+                        </label>
+                        <!-- NEU: Optionen für die Position der Zusammenfassung -->
+                        <fieldset id="summary-position-options" class="sub-fieldset" style="margin-top: 10px; display: none;">
+                            <legend>Position der Zusammenfassung</legend>
+                            <label><input type="radio" name="summary-pos" value="above" checked> Oben</label>
+                            <label><input type="radio" name="summary-pos" value="left"> Links</label>
+                            <label><input type="radio" name="summary-pos" value="right"> Rechts</label>
+                        </fieldset>
+                        <!-- NEU: Suchfunktion für den Lese-Modus -->
+                        <div id="reading-search-container" style="margin-top: 15px; display: flex; gap: 5px;">
+                            <input type="text" id="search-input" placeholder="Suche in der Bibel..." style="flex-grow: 1;">
+                            <button id="search-button" class="button">Suchen</button>
+                            <button id="clear-search-button" class="button" style="display: none;">Löschen</button>
+                        </div>
+                    </div>
+                    <!-- NEU: Obere Navigation für den Lese-Modus -->
+                    <div id="reading-nav-top" class="context-nav" style="display: none; margin-bottom: 10px;">
+                        <button class="reading-prev-chapter">&laquo; Vorheriges Kapitel</button>
+                        <button class="reading-next-chapter">Nächstes Kapitel &raquo;</button>
+                    </div>
                     <p id="verse-text-display" class="verse-display">Lade Verse...</p>
+                    <!-- NEU: Navigation für den Lese-Modus -->
+                    <div id="reading-nav-bottom" class="context-nav" style="display: none; margin-top: 10px;">
+                        <button class="reading-prev-chapter">&laquo; Vorheriges Kapitel</button>
+                        <button class="reading-next-chapter">Nächstes Kapitel &raquo;</button>
+                    </div>
                 </fieldset>
-                <fieldset>
+                <!-- NEU: Eigener Container für Feedback, um es auszublenden -->
+                <fieldset id="feedback-section">
                     <legend>Feedback & Ergebnisse</legend>
                     <div id="feedback-message"></div>
                     <canvas id="feedback-canvas" width="600" height="200"></canvas>
@@ -166,18 +339,56 @@
         </div>
     </div>
 
+    <!-- NEU: Modal für die Bereichsauswahl -->
+    <div id="scope-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Benutzerdefinierten Bereich auswählen</h2>
+                <span id="close-scope-modal-button" class="close-button">&times;</span>
+            </div>
+            <div id="scope-filter-buttons" class="button-group">
+                <button class="button" data-group="AT">Nur AT</button>
+                <button class="button" data-group="NT">Nur NT</button>
+                <button class="button" data-group="PENTATEUCH">5 Bücher Mose</button>
+                <button class="button" data-group="GOSPELS">Evangelien</button>
+                <button class="button" data-group="PAULINE_EPISTLES">Paulusbriefe</button>
+                <button class="button" data-group="PROPHETS">Alle Propheten</button>
+                <button class="button" data-group="MAJOR_PROPHETS">Große Propheten</button>
+                <button class="button" data-group="MINOR_PROPHETS">Kleine Propheten</button>
+                <button class="button" data-group="GENERAL_EPISTLES">Andere Briefe</button>
+                <button class="button" data-group="SAMUEL_KINGS_CHRONICLES">Geschichtsbücher (Sam/Kön/Chr)</button>
+                <button class="button" id="scope-select-all">Alle auswählen</button>
+                <button class="button" id="scope-deselect-all">Alle abwählen</button>
+            </div>
+            <div id="scope-book-list">
+                <!-- Bücher werden hier dynamisch von JS eingefügt -->
+            </div>
+            <div class="modal-footer" style="margin-top: 15px; text-align: right;">
+                <button id="apply-scope-button" class="button button-primary">Anwenden & Schließen</button>
+            </div>
+        </div>
+    </div>
+
     <!-- NEU: Kontext-Ansicht -->
     <div id="context-view" class="view" style="display: none;">
         <div id="context-header">
             <h2 id="context-title">Kapitelkontext</h2>
             <button id="close-context-button" class="close-button">&times;</button>
         </div>
-        <div id="context-content">
-            <div id="context-text"></div>
+        <!-- NEU: Obere Navigationsleiste für den Kontext -->
+        <div class="context-nav">
+            <button class="prev-chapter-button">&laquo; Vorheriges Kapitel</button>
+            <button class="next-chapter-button">Nächstes Kapitel &raquo;</button>
         </div>
-        <div id="context-nav">
-            <button id="prev-chapter-button">&laquo; Vorheriges Kapitel</button>
-            <button id="next-chapter-button">Nächstes Kapitel &raquo;</button>
+        <!-- NEU: Wrapper für geteilte Ansicht -->
+        <div id="context-content-wrapper">
+            <div id="context-text"></div> <!-- Bibeltext hier -->
+            <div id="context-summary"></div> <!-- Zusammenfassung hier -->
+        </div>
+        <!-- Untere Navigationsleiste für den Kontext -->
+        <div class="context-nav" id="context-nav-bottom">
+            <button class="prev-chapter-button">&laquo; Vorheriges Kapitel</button>
+            <button class="next-chapter-button">Nächstes Kapitel &raquo;</button>
         </div>
     </div>
 
