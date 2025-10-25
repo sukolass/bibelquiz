@@ -228,8 +228,9 @@
                     </div>
                     <div id="seed-container" class="control-group">
                         <label for="seed-input">Fragen-Seed:</label>
-                        <div class="input-with-button">
+                        <div class="input-with-button" style="display: flex; align-items: center; gap: 5px;">
                             <input type="text" id="seed-input" placeholder="Wort für Reihenfolge eingeben...">
+                            <button id="show-seed-explanation-button" class="button" title="Wie funktioniert das?" style="padding: 5px 8px; line-height: 1;">?</button>
                             <button id="clear-seed-button" title="Seed entfernen" style="display: none;">&times;</button>
                         </div>
                     </div>
@@ -442,6 +443,23 @@
             <button class="next-chapter-button">Nächstes Kapitel &raquo;</button>
         </div>
     </div>
+
+    <!-- NEU: Modal für die Seed-Erklärung -->
+    <div id="seed-explanation-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Wie funktioniert der Fragen-Seed?</h2>
+                <span id="close-seed-explanation-modal-button" class="close-button">&times;</span>
+            </div>
+            <div id="seed-explanation-content" style="overflow-y: auto; padding: 10px; background-color: #fff; border-radius: 4px; font-family: monospace; white-space: pre-wrap;">
+                <!-- Inhalt wird dynamisch von JS eingefügt -->
+            </div>
+            <div class="modal-footer" style="margin-top: 15px; text-align: right;">
+                <p style="text-align: left; font-size: 0.9em; color: #555;">Dies ist eine vereinfachte Darstellung der ersten Schritte.</p>
+            </div>
+        </div>
+    </div>
+
 
 
     <!-- Skripte -->

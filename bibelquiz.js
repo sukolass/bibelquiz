@@ -15,6 +15,11 @@ document.addEventListener('mainScriptReady', async () => {
         const scopeModal = document.getElementById('scope-modal');
         const closeScopeModalButton = document.getElementById('close-scope-modal-button');
         const scopeBookList = document.getElementById('scope-book-list');
+        // NEU: Elemente für das Seed-Erklärungs-Modal
+        const showSeedExplanationButton = document.getElementById('show-seed-explanation-button');
+        const seedExplanationModal = document.getElementById('seed-explanation-modal');
+        const closeSeedExplanationModalButton = document.getElementById('close-seed-explanation-modal-button');
+        const seedExplanationContent = document.getElementById('seed-explanation-content');
         const mcOptionsContainer = document.getElementById('mc-options-container'); // NEU
         // NEU: Optionen für den MC-Modus (Reihenfolge)
         const seedInput = document.getElementById('seed-input'); // NEU für Seed
@@ -140,7 +145,7 @@ document.addEventListener('mainScriptReady', async () => {
     ];
 
     // DEBUG: Überprüfen, ob alle kritischen Elemente gefunden wurden
-    if (!bibleQuizView || !bookSelect || !positionSlider || !ctx || !contextView || !showContextButton || !hostInfoDiv || !gameModeSelection || !scopeSelectionContainer || !quizInputColumn || !contextSummary || !searchInput || !referenceInput || !gotoReferenceButton || !randomChapterButton || !mcQuizOptions || !seedInput || !clearSeedButton) {
+    if (!bibleQuizView || !bookSelect || !positionSlider || !ctx || !contextView || !showContextButton || !hostInfoDiv || !gameModeSelection || !scopeSelectionContainer || !quizInputColumn || !contextSummary || !searchInput || !referenceInput || !gotoReferenceButton || !randomChapterButton || !mcQuizOptions || !seedInput || !clearSeedButton || !seedExplanationModal) {
         console.error('[FATAL] Ein oder mehrere kritische Bibelquiz-Elemente wurden im HTML nicht gefunden. Skript wird angehalten.');
         return;
     }
@@ -359,10 +364,10 @@ document.addEventListener('mainScriptReady', async () => {
     // NEU (Multiple-Choice-Quiz): Funktion zum Laden und Verarbeiten der Fragen
     async function loadAndParseMcQuestions() {
         try {
-            console.log('[MC-Quiz] Lade "fragen.json".');
-            const response = await fetch(`fragen.json?v=${Date.now()}`);
+            console.log('[MC-Quiz] Lade "bibel_quiz_fragen.json".');
+            const response = await fetch(`bibel_quiz_fragen.json?v=${Date.now()}`);
             if (!response.ok) {
-                console.warn(`[MC-Quiz] Datei 'fragen.json' nicht gefunden (Status: ${response.status}). Der "Multiple-Choice"-Modus ist nicht verfügbar.`);
+                console.warn(`[MC-Quiz] Datei 'bibel_quiz_fragen.json' nicht gefunden (Status: ${response.status}). Der "Multiple-Choice"-Modus ist nicht verfügbar.`);
                 return false;
             }
             const data = await response.json();
@@ -382,12 +387,12 @@ document.addEventListener('mainScriptReady', async () => {
                 console.log(`[MC-Quiz] ${questionCount} gültige Multiple-Choice-Fragen geladen.`);
                 return true;
             } else {
-                console.warn('[MC-Quiz] "fragen.json" wurde geladen, enthält aber keine Fragen im erwarteten Format.');
+                console.warn('[MC-Quiz] "bibel_quiz_fragen.json" wurde geladen, enthält aber keine Fragen im erwarteten Format.');
                 return false;
             }
 
         } catch (error) {
-            console.error("[MC-Quiz] Fehler beim Laden der 'fragen.json':", error);
+            console.error("[MC-Quiz] Fehler beim Laden der 'bibel_quiz_fragen.json':", error);
             return false;
         }
     }
@@ -509,18 +514,27 @@ document.addEventListener('mainScriptReady', async () => {
     // NEU (Multiple-Choice-Quiz): Funktion zum Anzeigen einer neuen Frage
     function displayNewMcQuestion() {
         const orderMode = document.querySelector('input[name="mc-order"]:checked').value;
+        // KORREKTUR: Deklariere die Variablen hier, damit sie in der ganzen Funktion gültig sind.
+        let booksWithQuestions = Object.keys(allMcQuestions);
+        let booksInScope = [];
 
         // Wenn die Warteschlange leer ist oder der Modus "Zufällig" ist, muss sie neu aufgebaut werden.
         if (mcQuestionQueue.length === 0 || orderMode === 'random') {
             mcQuestionQueue = [];
             mcCurrentIndex = 0;
-
-            // Filtere die Fragen basierend auf dem Scope
-            const booksInScope = customScope.active && customScope.books.length > 0 ? customScope.books : Object.keys(allMcQuestions);
+            booksInScope = customScope.active && customScope.books.length > 0 
+                ? booksWithQuestions.filter(book => customScope.books.includes(book)) 
+                : booksWithQuestions;
             const canonicalBookOrder = bookChapterStructure.map(b => b.book);
 
             // Sortiere die Bücher in kanonischer Reihenfolge
-            const sortedBooksInScope = booksInScope.sort((a, b) => canonicalBookOrder.indexOf(a) - canonicalBookOrder.indexOf(b));
+            // KORREKTUR: Behalte Bücher bei, die nicht in der kanonischen Reihenfolge (aus verse.txt) gefunden werden.
+            // Diese werden ans Ende der Liste sortiert, anstatt sie zu verwerfen.
+            const sortedBooksInScope = booksInScope.sort((a, b) => {
+                const indexA = canonicalBookOrder.indexOf(a);
+                const indexB = canonicalBookOrder.indexOf(b);
+                return (indexA === -1 ? Infinity : indexA) - (indexB === -1 ? Infinity : indexB);
+            });
 
             for (const book of sortedBooksInScope) {
                 if (allMcQuestions[book]) {
@@ -544,7 +558,8 @@ document.addEventListener('mainScriptReady', async () => {
         }
 
         if (mcQuestionQueue.length === 0) {
-            verseTextDisplay.textContent = 'Keine Multiple-Choice-Fragen für den ausgewählten Bereich gefunden oder "fragen.json" ist leer/fehlerhaft.';
+            // KORREKTUR: Ersetze die generische Fehlermeldung durch eine detaillierte Diagnose.
+            diagnoseMcQuestionIssue(booksWithQuestions, booksInScope);
             mcOptionsContainer.innerHTML = '';
             return;
         }
@@ -563,6 +578,37 @@ document.addEventListener('mainScriptReady', async () => {
             }
             currentMcQuestion = mcQuestionQueue[mcCurrentIndex];
             mcCurrentIndex++;
+        }
+
+        // NEU: Diagnose-Funktion, um zu analysieren, warum keine Fragen gefunden wurden.
+        function diagnoseMcQuestionIssue(allBooksFromJson, booksInCurrentScope) {
+            console.warn("[MC-Diagnose] Keine Fragen für die Warteschlange gefunden. Starte Analyse...");
+            let diagnosis = "Keine Multiple-Choice-Fragen für den ausgewählten Bereich gefunden.";
+
+            if (Object.keys(allMcQuestions).length === 0) {
+                diagnosis += "\n\nGrund: Die Fragendatei 'bibel_quiz_fragen.json' ist entweder leer oder konnte nicht korrekt geladen werden. Bitte prüfe die Browser-Konsole (F12) auf Ladefehler.";
+                console.error("[MC-Diagnose] Fehler: `allMcQuestions` ist ein leeres Objekt.");
+            } else if (customScope.active && customScope.books.length > 0 && booksInCurrentScope.length === 0) {
+                diagnosis += `\n\nGrund: Der aktive Bereich enthält Bücher, für die in der Fragendatei keine Fragen existieren.`;
+                diagnosis += `\n- Bücher im Bereich: [${customScope.books.join(', ')}]`;
+                diagnosis += `\n- Bücher mit Fragen: [${allBooksFromJson.join(', ')}]`;
+                console.warn("[MC-Diagnose] Der Schnitt zwischen den Büchern im Scope und den Büchern in der JSON ist leer.", {
+                    scopeBooks: customScope.books,
+                    jsonBooks: allBooksFromJson
+                });
+            } else if (customScope.active) {
+                diagnosis += `\n\nGrund: Obwohl Bücher im Bereich ausgewählt sind, wurden für die spezifisch ausgewählten Kapitel keine Fragen gefunden.`;
+                diagnosis += `\n- Bücher im Bereich: [${booksInCurrentScope.join(', ')}]`;
+                diagnosis += `\n- Ausgewählte Kapitel: ${JSON.stringify(customScope.chapters, null, 2)}`;
+                console.warn("[MC-Diagnose] Keine Fragen für die ausgewählten Kapitel gefunden. Überprüfe die Kapitel-Auswahl im Scope.", {
+                    scope: customScope
+                });
+            } else {
+                diagnosis += "\n\nGrund: Ein unerwarteter Fehler ist aufgetreten. Die Fragendatei scheint geladen, aber die Verarbeitung schlug fehl. Bitte prüfe die Konsolen-Logs.";
+                console.error("[MC-Diagnose] Unerwarteter Zustand. `mcQuestionQueue` ist leer, obwohl es Fragen geben sollte.");
+            }
+
+            verseTextDisplay.innerHTML = `<div style="text-align: left; white-space: pre-wrap;">${diagnosis}</div>`;
         }
 
         currentVerse = null;
@@ -1470,6 +1516,54 @@ document.addEventListener('mainScriptReady', async () => {
         updateSeed();
     });
 
+    // NEU: Event-Listener und Funktion für das Seed-Erklärungs-Modal
+    showSeedExplanationButton.addEventListener('click', displaySeedExplanation);
+    closeSeedExplanationModalButton.addEventListener('click', () => {
+        seedExplanationModal.style.display = 'none';
+    });
+
+    function displaySeedExplanation() {
+        const seedStr = seedInput.value.trim();
+        if (!seedStr) {
+            seedExplanationContent.innerHTML = '<p style="font-family: sans-serif;">Bitte gib zuerst ein Wort (Seed) in das Eingabefeld ein, um die Berechnung zu sehen.</p>';
+            seedExplanationModal.style.display = 'block';
+            return;
+        }
+
+        let html = `<h3>Schritt-für-Schritt-Erklärung für Seed: "${seedStr}"</h3>`;
+
+        // Schritt 1: cyrb128 Hash
+        html += '<h4>Schritt 1: Erzeuge einen numerischen Startwert (Seed) aus dem Wort</h4>';
+        html += '<p style="font-family: sans-serif;">Die Funktion <code>cyrb128</code> wandelt den Text in eine 32-bit Zahl um. Dies geschieht durch eine Reihe von Bit-Operationen, um eine gut verteilte, aber für denselben Text immer gleiche Zahl zu erhalten.</p>';
+        
+        let h1 = 1779033703, h2 = 3144134277, h3 = 1013904242, h4 = 2773480762;
+        for (let i = 0, k; i < seedStr.length; i++) {
+            k = seedStr.charCodeAt(i);
+            h1 = h2 ^ Math.imul(h1 ^ k, 597399067);
+            h2 = h3 ^ Math.imul(h2 ^ k, 2869860233);
+            h3 = h4 ^ Math.imul(h3 ^ k, 951274213);
+            h4 = h1 ^ Math.imul(h4 ^ k, 2716044179);
+        }
+        h1 = Math.imul(h3 ^ (h1 >>> 18), 597399067);
+        h2 = Math.imul(h4 ^ (h2 >>> 22), 2869860233);
+        h3 = Math.imul(h1 ^ (h3 >>> 17), 951274213);
+        h4 = Math.imul(h2 ^ (h4 >>> 19), 2716044179);
+        const finalSeed = (h1^h2^h3^h4)>>>0;
+
+        html += `<p>Ergebnis: <code>cyrb128("${seedStr}")</code> = <strong>${finalSeed}</strong></p>`;
+
+        // Schritt 2: mulberry32 PRNG
+        html += '<h4>Schritt 2: Erzeuge eine vorhersagbare Zufallszahlen-Sequenz</h4>';
+        html += '<p style="font-family: sans-serif;">Die Funktion <code>mulberry32</code> nimmt den numerischen Seed und erzeugt bei jedem Aufruf eine neue, aber vorhersagbare "Zufallszahl" zwischen 0 und 1. Hier sind die ersten drei Zahlen, die generiert werden:</p>';
+        const tempGenerator = mulberry32(finalSeed);
+        html += `<p>1. Zufallszahl: ${tempGenerator()}</p>`;
+        html += `<p>2. Zufallszahl: ${tempGenerator()}</p>`;
+        html += `<p>3. Zufallszahl: ${tempGenerator()}</p>`;
+
+        seedExplanationContent.innerHTML = html;
+        seedExplanationModal.style.display = 'block';
+    }
+
     // NEU: Event-Listener für den Lese-Modus
     showSummariesCheckbox.addEventListener('change', () => {
         summaryPositionOptions.style.display = showSummariesCheckbox.checked ? 'block' : 'none';
@@ -1920,7 +2014,7 @@ document.addEventListener('mainScriptReady', async () => {
     }
 
     // Lade beide Datensätze parallel
-    const [versesSuccess, headingsSuccess] = await Promise.all([
+    const [versesSuccess, headingsSuccess, summariesSuccess, mcQuestionsSuccess] = await Promise.all([
         loadAndParseVerses(),
         loadAndParseHeadings(),
         loadAndParseSummaries(), // NEU: Lade auch die Zusammenfassungen
@@ -1930,9 +2024,7 @@ document.addEventListener('mainScriptReady', async () => {
     if (versesSuccess) {
         // Starte den Einzelspielermodus standardmäßig, wenn die Verse geladen sind.
         // Dies wird von client.js überschrieben, wenn der Multiplayer-Modus gewählt wird.
-        // KORREKTUR: Das 'clientIsReady' Event wird jetzt in client.js gesendet,
-        // um die Logik sauber zu trennen. Hier wird nur noch der Standardmodus gestartet.
-        startBibleQuizSinglePlayer();
+        startBibleQuizSinglePlayer(); // KORREKTUR: Starte das Spiel erst, nachdem alle Daten erfolgreich geladen wurden.
     } else {
         verseTextDisplay.textContent = "Fehler: Die Bibelverse konnten nicht geladen werden. Das Spiel kann nicht gestartet werden.";
     }
