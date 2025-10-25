@@ -15,6 +15,11 @@ document.addEventListener('mainScriptReady', async () => {
         const scopeModal = document.getElementById('scope-modal');
         const closeScopeModalButton = document.getElementById('close-scope-modal-button');
         const scopeBookList = document.getElementById('scope-book-list');
+        const mcOptionsContainer = document.getElementById('mc-options-container'); // NEU
+        // NEU: Optionen für den MC-Modus (Reihenfolge)
+        const seedInput = document.getElementById('seed-input'); // NEU für Seed
+        const clearSeedButton = document.getElementById('clear-seed-button'); // NEU für Seed
+        const mcQuizOptions = document.getElementById('mc-quiz-options');
         // NEU: Elemente für den Lese-Modus
         const readingOptionsContainer = document.getElementById('reading-options-container');
         const showSummariesCheckbox = document.getElementById('show-summaries-checkbox');
@@ -23,6 +28,10 @@ document.addEventListener('mainScriptReady', async () => {
         const readingNavBottom = document.getElementById('reading-nav-bottom');
         const searchInput = document.getElementById('search-input');
         const searchButton = document.getElementById('search-button');
+        // NEU: Elemente für die "Gehe zu"-Funktion im Lesemodus
+        const referenceInput = document.getElementById('reference-input');
+        const gotoReferenceButton = document.getElementById('goto-reference-button');
+        const randomChapterButton = document.getElementById('random-chapter-button');
         const clearSearchButton = document.getElementById('clear-search-button');
 
         const applyScopeButton = document.getElementById('apply-scope-button');
@@ -74,11 +83,16 @@ document.addEventListener('mainScriptReady', async () => {
     let allVerses = [];
     let allHeadings = []; // NEU (Kapitel-Quiz): Array für die Kapitelüberschriften
     let allSummaries = []; // NEU (Zusammenfassungs-Quiz): Array für die Kapitelzusammenfassungen
+    let allMcQuestions = {}; // NEU (Multiple-Choice-Quiz): Objekt für die Fragen
     let currentVerse = null;
     let currentChapterHeadings = null; // NEU (Kapitel-Quiz): Das zu erratende Kapitel
     let currentSummary = null; // NEU (Zusammenfassungs-Quiz): Die zu erratende Zusammenfassung
+    let currentMcQuestion = null; // NEU (Multiple-Choice-Quiz): Die aktuelle Frage
     let gameMode = 'singleplayer'; // 'singleplayer' oder 'multiplayer'
-    let quizMode = 'guessVerse'; // 'guessVerse', 'guessChapter' oder 'guessSummary'
+    // NEU: Zustand für den sequenziellen MC-Modus
+    let mcQuestionQueue = [];
+    let mcCurrentIndex = 0;
+    let quizMode = 'guessVerse'; // 'guessVerse', 'guessChapter', 'guessSummary', 'multipleChoice'
     let players = {}; // Für den Mehrspielermodus
     let myPlayerId = null; // Eigene Spieler-ID 
     let isPracticeMode = false; // NEU (Übungsmodus): Flag für den Übungsmodus
@@ -94,6 +108,10 @@ document.addEventListener('mainScriptReady', async () => {
     let bookChapterStructure = []; // Struktur für die Kapitelnavigation
     // NEU: Promise, das signalisiert, wann die Verse fertig geladen und verarbeitet sind.
     let versesLoadedPromise;
+    // NEU: Zustand für den Seed-basierten Zufallsgenerator
+    let randomGenerator = Math.random; // Standardmäßig den normalen Zufallsgenerator verwenden
+    let currentSeedString = '';
+
 
     // NEU: Definitionen für Buchgruppen
     const BOOK_GROUPS = {
@@ -122,7 +140,7 @@ document.addEventListener('mainScriptReady', async () => {
     ];
 
     // DEBUG: Überprüfen, ob alle kritischen Elemente gefunden wurden
-    if (!bibleQuizView || !bookSelect || !positionSlider || !ctx || !contextView || !showContextButton || !hostInfoDiv || !gameModeSelection || !scopeSelectionContainer || !quizInputColumn || !contextSummary || !searchInput) {
+    if (!bibleQuizView || !bookSelect || !positionSlider || !ctx || !contextView || !showContextButton || !hostInfoDiv || !gameModeSelection || !scopeSelectionContainer || !quizInputColumn || !contextSummary || !searchInput || !referenceInput || !gotoReferenceButton || !randomChapterButton || !mcQuizOptions || !seedInput || !clearSeedButton) {
         console.error('[FATAL] Ein oder mehrere kritische Bibelquiz-Elemente wurden im HTML nicht gefunden. Skript wird angehalten.');
         return;
     }
@@ -130,6 +148,34 @@ document.addEventListener('mainScriptReady', async () => {
     // ---------------------------------------------------------------------------------
     // --- 2. Funktionsdefinitionen ---
     // ---------------------------------------------------------------------------------
+    // --- Seed-basierter Zufallsgenerator ---
+    // Erzeugt eine Hash-Zahl aus einem String
+    function cyrb128(str) {
+        let h1 = 1779033703, h2 = 3144134277,
+            h3 = 1013904242, h4 = 2773480762;
+        for (let i = 0, k; i < str.length; i++) {
+            k = str.charCodeAt(i);
+            h1 = h2 ^ Math.imul(h1 ^ k, 597399067);
+            h2 = h3 ^ Math.imul(h2 ^ k, 2869860233);
+            h3 = h4 ^ Math.imul(h3 ^ k, 951274213);
+            h4 = h1 ^ Math.imul(h4 ^ k, 2716044179);
+        }
+        h1 = Math.imul(h3 ^ (h1 >>> 18), 597399067);
+        h2 = Math.imul(h4 ^ (h2 >>> 22), 2869860233);
+        h3 = Math.imul(h1 ^ (h3 >>> 17), 951274213);
+        h4 = Math.imul(h2 ^ (h4 >>> 19), 2716044179);
+        return (h1^h2^h3^h4)>>>0;
+    }
+
+    // Mulberry32 PRNG
+    function mulberry32(a) {
+        return function() {
+          a |= 0; a = a + 0x6D2B79F5 | 0;
+          let t = Math.imul(a ^ a >>> 15, 1 | a);
+          t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+          return ((t ^ t >>> 14) >>> 0) / 4294967296;
+        }
+    }
     // --- Datenverarbeitung ---
     async function loadAndParseVerses() {
         // NEU: Erstelle ein Promise, das von außen awaited werden kann.
@@ -310,6 +356,42 @@ document.addEventListener('mainScriptReady', async () => {
         }
     }
 
+    // NEU (Multiple-Choice-Quiz): Funktion zum Laden und Verarbeiten der Fragen
+    async function loadAndParseMcQuestions() {
+        try {
+            console.log('[MC-Quiz] Lade "fragen.json".');
+            const response = await fetch(`fragen.json?v=${Date.now()}`);
+            if (!response.ok) {
+                console.warn(`[MC-Quiz] Datei 'fragen.json' nicht gefunden (Status: ${response.status}). Der "Multiple-Choice"-Modus ist nicht verfügbar.`);
+                return false;
+            }
+            const data = await response.json();
+            allMcQuestions = data;
+
+            // Zähle die geladenen Fragen
+            let questionCount = 0;
+            for (const book in allMcQuestions) {
+                for (const chapter in allMcQuestions[book]) {
+                    if (Array.isArray(allMcQuestions[book][chapter])) {
+                        questionCount += allMcQuestions[book][chapter].length;
+                    }
+                }
+            }
+
+            if (questionCount > 0) {
+                console.log(`[MC-Quiz] ${questionCount} gültige Multiple-Choice-Fragen geladen.`);
+                return true;
+            } else {
+                console.warn('[MC-Quiz] "fragen.json" wurde geladen, enthält aber keine Fragen im erwarteten Format.');
+                return false;
+            }
+
+        } catch (error) {
+            console.error("[MC-Quiz] Fehler beim Laden der 'fragen.json':", error);
+            return false;
+        }
+    }
+
     // --- UI-Logik ---
     function setInitialSelection() {
         // Setze auf AT, 1. Mose
@@ -335,6 +417,8 @@ document.addEventListener('mainScriptReady', async () => {
             displayNewChapterHeadings();
         } else if (quizMode === 'guessSummary') {
             displayNewSummary();
+        } else if (quizMode === 'multipleChoice') {
+            displayNewMcQuestion();
         }
     }
 
@@ -368,7 +452,7 @@ document.addEventListener('mainScriptReady', async () => {
             return;
         }
 
-        currentSummary = summaryPool[Math.floor(Math.random() * summaryPool.length)];
+        currentSummary = summaryPool[Math.floor(randomGenerator() * summaryPool.length)];
         currentVerse = null;
         currentChapterHeadings = null;
 
@@ -397,7 +481,7 @@ document.addEventListener('mainScriptReady', async () => {
         }
 
         // Wähle ein zufälliges Kapitel aus dem (gefilterten) Pool
-        currentChapterHeadings = chapterPool[Math.floor(Math.random() * chapterPool.length)];
+        currentChapterHeadings = chapterPool[Math.floor(randomGenerator() * chapterPool.length)];
 
 
         currentVerse = null; // Sicherstellen, dass der alte Zustand gelöscht ist
@@ -422,13 +506,106 @@ document.addEventListener('mainScriptReady', async () => {
         setInitialSelection();
     }
 
+    // NEU (Multiple-Choice-Quiz): Funktion zum Anzeigen einer neuen Frage
+    function displayNewMcQuestion() {
+        const orderMode = document.querySelector('input[name="mc-order"]:checked').value;
+
+        // Wenn die Warteschlange leer ist oder der Modus "Zufällig" ist, muss sie neu aufgebaut werden.
+        if (mcQuestionQueue.length === 0 || orderMode === 'random') {
+            mcQuestionQueue = [];
+            mcCurrentIndex = 0;
+
+            // Filtere die Fragen basierend auf dem Scope
+            const booksInScope = customScope.active && customScope.books.length > 0 ? customScope.books : Object.keys(allMcQuestions);
+            const canonicalBookOrder = bookChapterStructure.map(b => b.book);
+
+            // Sortiere die Bücher in kanonischer Reihenfolge
+            const sortedBooksInScope = booksInScope.sort((a, b) => canonicalBookOrder.indexOf(a) - canonicalBookOrder.indexOf(b));
+
+            for (const book of sortedBooksInScope) {
+                if (allMcQuestions[book]) {
+                    // Wenn kein spezifisches Kapitel im Scope ausgewählt ist, nimm alle Kapitel des Buches
+                    const chaptersForBook = (customScope.active && customScope.chapters[book]?.length > 0)
+                        ? customScope.chapters[book]
+                        : Object.keys(allMcQuestions[book]).map(Number);
+
+                    // Sortiere die Kapitel numerisch
+                    const sortedChapters = chaptersForBook.sort((a, b) => a - b);
+
+                    for (const chapter of sortedChapters) {
+                        if (allMcQuestions[book][chapter]) {
+                            allMcQuestions[book][chapter].forEach(q => {
+                                mcQuestionQueue.push({ ...q, book, chapter: parseInt(chapter, 10) });
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        if (mcQuestionQueue.length === 0) {
+            verseTextDisplay.textContent = 'Keine Multiple-Choice-Fragen für den ausgewählten Bereich gefunden oder "fragen.json" ist leer/fehlerhaft.';
+            mcOptionsContainer.innerHTML = '';
+            return;
+        }
+
+        if (orderMode === 'random') {
+            // Wähle eine zufällige Frage aus der neu erstellten (gefilterten) Liste
+            currentMcQuestion = mcQuestionQueue[Math.floor(randomGenerator() * mcQuestionQueue.length)];
+        } else { // Sequential Mode
+            if (mcCurrentIndex >= mcQuestionQueue.length) {
+                // Alle Fragen wurden beantwortet, fange von vorne an.
+                mcCurrentIndex = 0;
+                verseTextDisplay.innerHTML = `<h3>Runde beendet!</h3><p>Alle ${mcQuestionQueue.length} Fragen aus dem ausgewählten Bereich wurden beantwortet. Klicke auf "Nächste Runde", um erneut zu beginnen.</p>`;
+                mcOptionsContainer.innerHTML = '';
+                guessButton.disabled = true;
+                return;
+            }
+            currentMcQuestion = mcQuestionQueue[mcCurrentIndex];
+            mcCurrentIndex++;
+        }
+
+        currentVerse = null;
+        currentChapterHeadings = null;
+        currentSummary = null;
+
+        let questionHtml = `<h3>${currentMcQuestion.frage} <span class="mc-ref">(${currentMcQuestion.book} ${currentMcQuestion.chapter})</span></h3>`;
+        if (currentMcQuestion.einleitung) {
+            questionHtml = `<p><em>${currentMcQuestion.einleitung}</em></p>${questionHtml}`;
+        }
+        verseTextDisplay.innerHTML = questionHtml;
+
+        // Mische die Antwortoptionen für jede Frage neu
+        const options = [...currentMcQuestion.optionen];
+        const correctOptionText = options[currentMcQuestion.korrekte_antwort_index];
+        // Fisher-Yates Shuffle
+        for (let i = options.length - 1; i > 0; i--) {
+            const j = Math.floor(randomGenerator() * (i + 1));
+            [options[i], options[j]] = [options[j], options[i]];
+        }
+        // Finde den neuen Index der korrekten Antwort
+        const newCorrectIndex = options.findIndex(opt => opt === correctOptionText);
+
+        mcOptionsContainer.innerHTML = '';
+        options.forEach((option, index) => {
+            const button = document.createElement('button');
+            button.className = 'mc-option-button';
+            button.textContent = option;
+            // Speichere, ob diese Option die richtige ist
+            button.dataset.correct = (index === newCorrectIndex);
+            mcOptionsContainer.appendChild(button);
+        });
+
+        resetFeedbackAndControls();
+    }
+
     function displayNewVerse() {
         let versePool = filterPoolByScope(allVerses);
 
         if (versePool.length === 0) return;
 
         // Wähle einen zufälligen Vers aus dem (gefilterten) Pool
-        currentVerse = versePool[Math.floor(Math.random() * versePool.length)];
+        currentVerse = versePool[Math.floor(randomGenerator() * versePool.length)];
         currentChapterHeadings = null; // Sicherstellen, dass der alte Zustand gelöscht ist
         currentSummary = null;
         verseTextDisplay.textContent = currentVerse.text;
@@ -446,12 +623,23 @@ document.addEventListener('mainScriptReady', async () => {
 
     // NEU: Funktion für den Lese-Modus
     function displayReadingChapter(book, chapter) {
+        // NEU: Berücksichtige den Scope für die Anzeige
+        const availableBooks = customScope.active ? bookChapterStructure.filter(b => customScope.books.includes(b.book)) : bookChapterStructure;
+        if (availableBooks.length === 0) {
+            verseTextDisplay.innerHTML = `<h2>Keine Kapitel im ausgewählten Bereich</h2>`;
+            return;
+        }
+
         if (!book || !chapter) {
-            const firstBook = bookChapterStructure[0];
+            const firstBook = availableBooks[0];
             book = firstBook.book;
             chapter = firstBook.chapters[0];
         }
 
+        // Stelle sicher, dass das angeforderte Kapitel im Scope liegt
+        if (customScope.active && (!customScope.books.includes(book) || (customScope.chapters[book]?.length > 0 && !customScope.chapters[book].includes(parseInt(chapter, 10))))) {
+             return; // Breche ab, wenn das Kapitel nicht im Scope ist
+        }
         currentContext = { book, chapter: parseInt(chapter, 10) };
 
         const summaryPosition = document.querySelector('input[name="summary-pos"]:checked').value;
@@ -474,11 +662,11 @@ document.addEventListener('mainScriptReady', async () => {
         });
 
         if (summaryPosition === 'above') {
-            chapterHtml = `<div id="reading-content-wrapper" class="above-summary">${summaryHtml}${verseHtml}</div>`;
+            chapterHtml = `<div id="reading-content-wrapper" class="reading-wrapper above-summary">${summaryHtml}${verseHtml}</div>`;
         } else if (summaryPosition === 'left') {
-            chapterHtml = `<div id="reading-content-wrapper" class="left-summary">${summaryHtml}<div class="chapter-text">${verseHtml}</div></div>`;
+            chapterHtml = `<div id="reading-content-wrapper" class="reading-wrapper left-summary">${summaryHtml}<div class="chapter-text">${verseHtml}</div></div>`;
         } else { // right
-            chapterHtml = `<div id="reading-content-wrapper" class="right-summary">${summaryHtml}<div class="chapter-text">${verseHtml}</div></div>`;
+            chapterHtml = `<div id="reading-content-wrapper" class="reading-wrapper right-summary">${summaryHtml}<div class="chapter-text">${verseHtml}</div></div>`;
         }
 
         verseTextDisplay.innerHTML = chapterHtml;
@@ -525,7 +713,7 @@ document.addEventListener('mainScriptReady', async () => {
         // UI-Anpassungen für die Suchergebnisansicht
         readingNavTop.style.display = 'none';
         readingNavBottom.style.display = 'none';
-        document.querySelector('.quiz-input-column').style.display = 'none'; // Linke Spalte ausblenden
+        // document.querySelector('.quiz-input-column').style.display = 'none'; // Linke Spalte nicht mehr ausblenden
         clearSearchButton.style.display = 'inline-block';
     }
 
@@ -645,15 +833,39 @@ document.addEventListener('mainScriptReady', async () => {
                 statsDisplay.textContent = feedbackText;
                 showContextView(actual.book, actual.chapter);
                 clearCanvas();
+            } else if (quizMode === 'multipleChoice') {
+                // Im Multiple-Choice-Modus wird die Auswertung über handleMcOptionClick gehandhabt.
+                // Der "Tipp abgeben"-Button hat hier keine Funktion.
+                return;
             }
 
             guessButton.disabled = true;
-        } else {
-            // Im Mehrspielermodus den Tipp an den Server senden
-            window.socket.emit('bibleQuiz:submitGuess', { guessId: guessedId });
-            feedbackMessage.textContent = "Dein Tipp wurde gespeichert. Warte auf die anderen Spieler...";
-            feedbackMessage.className = "";
-            guessButton.disabled = true;
+        }
+    }
+
+    // NEU (Multiple-Choice-Quiz): Auswertung beim Klick auf eine Option
+    // KORREKTUR: Diese Funktion wurde aus `makeGuess` herausgezogen, um global verfügbar zu sein.
+    function handleMcOptionClick(e) {
+        if (e.target.tagName === 'BUTTON' && currentMcQuestion) {
+            const correctIndex = currentMcQuestion.korrekte_antwort_index; // Index der korrekten Antwort aus den Original-Optionen
+            const isCorrect = e.target.dataset.correct === 'true';
+
+            const allButtons = mcOptionsContainer.querySelectorAll('button');
+            allButtons.forEach(btn => btn.disabled = true); // Alle Buttons deaktivieren
+
+            if (isCorrect) {
+                e.target.classList.add('correct');
+                feedbackMessage.textContent = "Richtig! " + (currentMcQuestion.aufloesung || "");
+                feedbackMessage.className = "feedback-success";
+            } else {
+                e.target.classList.add('incorrect');
+                mcOptionsContainer.querySelector('button[data-correct="true"]').classList.add('correct'); // Richtige Antwort hervorheben
+                feedbackMessage.textContent = `Falsch. Die richtige Antwort war: ${currentMcQuestion.optionen[correctIndex]} (${currentMcQuestion.aufloesung || ""})`;
+                feedbackMessage.className = "feedback-error";
+            }
+            // Die Auflösung wird jetzt direkt in der Feedback-Nachricht angezeigt.
+            // statsDisplay.textContent = currentMcQuestion.aufloesung;
+            guessButton.disabled = true; // Deaktiviert den "Tipp abgeben" Button, falls er sichtbar wäre
         }
     }
     
@@ -1056,14 +1268,26 @@ document.addEventListener('mainScriptReady', async () => {
         const isQuizActive = mode !== 'readMode';
 
         // NEU: Passe die Breite der Hauptansicht an
-        bibleQuizView.style.maxWidth = isQuizActive ? '900px' : '1200px';
+        bibleQuizView.style.maxWidth = '1200px'; // Immer breiter für den Lesemodus
+
+        // NEU: Passe die Spaltenbreite je nach Modus an
+        const displayColumn = document.getElementById('verse-display-section');
+        if (!isQuizActive) { // Lese-Modus
+            quizInputColumn.style.flex = '1 1 350px'; // Linke Spalte schmaler
+            displayColumn.style.flex = '3 1 0';      // Rechte Spalte (Lesebereich) breiter
+        } else { // Quiz-Modus
+            quizInputColumn.style.flex = ''; // Setzt auf CSS-Standard zurück (1)
+            displayColumn.style.flex = '';   // Setzt auf CSS-Standard zurück (2)
+        }
 
         // Quiz-spezifische Elemente
-        quizInputColumn.style.display = isQuizActive ? 'flex' : 'none'; // NEU
+        quizInputColumn.style.display = 'flex'; // Immer sichtbar
         document.getElementById('guess-controls').style.display = isQuizActive ? 'block' : 'none';
         document.getElementById('guess-button').style.display = isQuizActive ? 'inline-block' : 'none';
         document.getElementById('new-verse-button').style.display = isQuizActive ? 'inline-block' : 'none';
         document.getElementById('feedback-section').style.display = isQuizActive ? 'block' : 'none';
+        mcOptionsContainer.style.display = (mode === 'multipleChoice') ? 'flex' : 'none';
+        mcQuizOptions.style.display = (mode === 'multipleChoice') ? 'block' : 'none';
         document.getElementById('show-context-button').style.display = isQuizActive ? 'inline-block' : 'none';
         document.getElementById('verse-display-legend').textContent = isQuizActive ? 'Zu erratende Aufgabe' : 'Lese-Ansicht';
 
@@ -1072,25 +1296,28 @@ document.addEventListener('mainScriptReady', async () => {
         summaryPositionOptions.style.display = (isQuizActive || !showSummariesCheckbox.checked) ? 'none' : 'block';
         readingNavTop.style.display = isQuizActive ? 'none' : 'block';
         readingNavBottom.style.display = isQuizActive ? 'none' : 'block';
-        readingNavTop.style.display = isQuizActive ? 'none' : 'block';
-        readingNavBottom.style.display = isQuizActive ? 'none' : 'block';
 
         if (isQuizActive) {
-            const isVerseMode = mode === 'guessVerse';
+            const isVerseMode = (mode === 'guessVerse');
+            const isChapterOrSummaryMode = (mode === 'guessChapter' || mode === 'guessSummary');
             document.getElementById('verse-select-container').style.display = isVerseMode ? 'block' : 'none';
             document.getElementById('verse-slider-wrapper').style.display = isVerseMode ? 'block' : 'none';
-            document.getElementById('position-controls').style.display = isVerseMode ? 'block' : 'none';
+            document.getElementById('position-controls').style.display = (mode === 'multipleChoice') ? 'none' : 'block';
+            document.getElementById('guess-controls').style.display = (mode === 'multipleChoice') ? 'none' : 'block';
+
+            updateBookDropdown();
+            // Setze den MC-Fragen-Zustand zurück, wenn der Modus gewechselt wird
+            mcQuestionQueue = [];
         } else {
             // Setup für den Lese-Modus
+            // Verstecke die Vers-spezifischen Bedienelemente
+            document.getElementById('verse-select-container').style.display = 'none';
+            document.getElementById('verse-slider-wrapper').style.display = 'none';
+            document.getElementById('position-controls').style.display = 'none';
             populateSelect(bookSelect, bookChapterStructure.map(b => b.book), "Buch");
             updateChapterDropdown();
             displayReadingChapter();
         }
-
-        // Steuerelemente für die Vers-Auswahl (nur im Vers-Modus sichtbar)
-        // document.getElementById('verse-select-container').style.display = isVerseMode ? 'block' : 'none';
-        // document.getElementById('verse-slider-wrapper').style.display = isVerseMode ? 'block' : 'none';
-        // document.getElementById('position-controls').style.display = isVerseMode ? 'block' : 'none';
     }
 
     // NEU: Funktionen für die Bereichsauswahl
@@ -1219,6 +1446,30 @@ document.addEventListener('mainScriptReady', async () => {
         }
     });
 
+    // NEU: Event-Listener für das Seed-Eingabefeld
+    function updateSeed() {
+        const seedStr = seedInput.value.trim();
+        currentSeedString = seedStr;
+
+        if (seedStr) {
+            const seed = cyrb128(seedStr);
+            randomGenerator = mulberry32(seed);
+            console.log(`[Seed] Pseudozufallsgenerator initialisiert mit Seed: "${seedStr}" (Hash: ${seed})`);
+            clearSeedButton.style.display = 'inline-block';
+        } else {
+            randomGenerator = Math.random; // Zurück zum Standard-Zufallsgenerator
+            console.log('[Seed] Seed entfernt. Standard-Zufallsgenerator (Math.random) wird verwendet.');
+            clearSeedButton.style.display = 'none';
+        }
+        // Starte eine neue Runde, damit der neue Seed sofort wirksam wird
+        startNewRound();
+    }
+    seedInput.addEventListener('change', updateSeed);
+    clearSeedButton.addEventListener('click', () => {
+        seedInput.value = '';
+        updateSeed();
+    });
+
     // NEU: Event-Listener für den Lese-Modus
     showSummariesCheckbox.addEventListener('change', () => {
         summaryPositionOptions.style.display = showSummariesCheckbox.checked ? 'block' : 'none';
@@ -1238,6 +1489,65 @@ document.addEventListener('mainScriptReady', async () => {
         clearSearchButton.style.display = 'none';
         setQuizModeUI('readMode'); // Setzt die Leseansicht zurück
     });
+
+    // NEU: Event-Listener für die "Gehe zu"-Funktion
+    gotoReferenceButton.addEventListener('click', parseAndGoToReference);
+    referenceInput.addEventListener('keyup', (e) => {
+        if (e.key === 'Enter') {
+            parseAndGoToReference();
+        }
+    });
+
+    randomChapterButton.addEventListener('click', () => {
+        // NEU: Berücksichtige den Scope
+        const availableBooks = customScope.active ? bookChapterStructure.filter(b => customScope.books.includes(b.book)) : bookChapterStructure;
+        if (availableBooks.length === 0) return;
+
+        const randomBook = availableBooks[Math.floor(randomGenerator() * availableBooks.length)];
+        const availableChapters = customScope.active && customScope.chapters[randomBook.book]?.length > 0
+            ? customScope.chapters[randomBook.book]
+            : randomBook.chapters;
+        const randomChapter = availableChapters[Math.floor(randomGenerator() * availableChapters.length)];
+        displayReadingChapter(randomBook.book, randomChapter);
+
+        // Synchronisiere die Dropdowns
+        bookSelect.value = randomBook.book;
+        updateChapterDropdown();
+        chapterSelect.value = randomChapter;
+    });
+
+    // NEU: Funktion zum Parsen und Anzeigen einer Bibelstellen-Referenz
+    function parseAndGoToReference() {
+        const input = referenceInput.value.trim();
+        if (!input) return;
+
+        // Regex, um Buch, Kapitel und optional Vers zu extrahieren
+        // Erlaubt z.B. "1. Mose 5,10", "Johannes 3 16", "Offenbarung 22"
+        const match = input.match(/^(.+?)\s*(\d+)(?:[,\s:.]+(\d+))?$/);
+
+        if (match) {
+            const bookNamePart = match[1].trim();
+            const chapter = parseInt(match[2], 10);
+            const verse = match[3] ? parseInt(match[3], 10) : null;
+
+            // Finde das passende Buch (Groß-/Kleinschreibung und Leerzeichen ignorieren)
+            const foundBook = bookChapterStructure.find(b =>
+                b.book.replace(/\s/g, '').toLowerCase() === bookNamePart.replace(/\s/g, '').toLowerCase()
+            );
+
+            if (foundBook) {
+                displayReadingChapter(foundBook.book, chapter);
+                // Synchronisiere die Dropdowns
+                bookSelect.value = foundBook.book;
+                updateChapterDropdown();
+                chapterSelect.value = chapter;
+            } else {
+                alert(`Das Buch "${bookNamePart}" wurde nicht gefunden.`);
+            }
+        } else {
+            alert('Ungültiges Format. Bitte verwenden Sie z.B. "Buch Kapitel" oder "Buch Kapitel,Vers".');
+        }
+    }
 
     // NEU: Event-Listener für beide Navigationsleisten (über Delegation)
     bibleQuizView.addEventListener('click', (e) => {
@@ -1357,9 +1667,32 @@ document.addEventListener('mainScriptReady', async () => {
     // NEU (Kapitel-Quiz): Event-Listener für die Spielmodus-Auswahl
     gameModeRadios.forEach(radio => radio.addEventListener('change', (e) => {
         setQuizModeUI(e.target.value);
+        // Setze den Seed-Generator zurück, wenn der Modus gewechselt wird,
+        // um eine konsistente Startfrage für einen gegebenen Seed zu gewährleisten.
+        if (currentSeedString) {
+            randomGenerator = mulberry32(cyrb128(currentSeedString));
+        } else {
+            randomGenerator = Math.random;
+        }
         // Starte direkt eine neue Runde im gewählten Modus
         startNewRound();
     }));
+
+    // NEU: Event-Listener für die MC-Reihenfolge-Optionen
+    mcQuizOptions.addEventListener('change', () => {
+        // Setze den Fortschritt zurück, wenn die Reihenfolge geändert wird
+        mcQuestionQueue = [];
+        // Setze auch den Seed-Generator zurück
+        if (currentSeedString) {
+            randomGenerator = mulberry32(cyrb128(currentSeedString));
+        } else {
+            randomGenerator = Math.random;
+        }
+        startNewRound();
+    });
+
+    // NEU: Event-Listener für die Multiple-Choice-Optionen (über Delegation)
+    mcOptionsContainer.addEventListener('click', handleMcOptionClick);
 
     // NEU: Funktion, um die Host-Informationen in der Lobby anzuzeigen
     function showHostInfo(data) {
@@ -1415,6 +1748,12 @@ document.addEventListener('mainScriptReady', async () => {
         // NEU (Bereichsauswahl): Zeige die Bereichsauswahl an
         if (scopeSelectionContainer) scopeSelectionContainer.style.display = 'block';
         setQuizModeUI(document.querySelector('input[name="game-mode"]:checked').value);
+        // Setze den Zufallsgenerator basierend auf dem aktuellen Seed-Input zurück
+        if (currentSeedString) {
+            randomGenerator = mulberry32(cyrb128(currentSeedString));
+        } else {
+            randomGenerator = Math.random;
+        }
         startNewRound();
     }
 
@@ -1584,7 +1923,8 @@ document.addEventListener('mainScriptReady', async () => {
     const [versesSuccess, headingsSuccess] = await Promise.all([
         loadAndParseVerses(),
         loadAndParseHeadings(),
-        loadAndParseSummaries() // NEU: Lade auch die Zusammenfassungen
+        loadAndParseSummaries(), // NEU: Lade auch die Zusammenfassungen
+        loadAndParseMcQuestions() // NEU: Lade die Multiple-Choice-Fragen
     ]);
 
     if (versesSuccess) {

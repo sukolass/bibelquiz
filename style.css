@@ -150,3 +150,32 @@ legend {
 .range-limit.active {
     font-weight: bold;
 }
+
+/* --- Multiple-Choice-Quiz Styles --- */
+.mc-options {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-top: 15px;
+}
+
+.mc-option-button {
+    display: block;
+    width: 100%;
+    padding: 12px;
+    background-color: #f0f0f0;
+    border: 1px solid #ccc;
+    border-radius: 5px;
+    text-align: left;
+    cursor: pointer;
+    transition: background-color 0.2s, border-color 0.2s;
+}
+
+.mc-option-button:hover:not(:disabled) {
+    background-color: #e0e0e0;
+    border-color: #999;
+}
+
+.mc-option-button.correct { background-color: #d4edda; border-color: #c3e6cb; }
+.mc-option-button.incorrect { background-color: #f8d7da; border-color: #f5c6cb; }
+.mc-option-button:disabled { cursor: not-allowed; opacity: 0.7; }

@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Bibel-Quiz</title>
+    <!-- NEU: Basis-URL für GitHub Pages -->
+    <base href="/bibelquiz/">
     <link rel="stylesheet" href="style.css">
     <!-- HINWEIS: Ich habe den <style>-Block aufgeräumt und korrigiert -->
     <style>
@@ -126,6 +128,28 @@
             background-color: yellow;
             font-weight: bold;
         }
+        #seed-container {
+            margin-top: 15px;
+        }
+
+        .input-with-button {
+            display: flex;
+            align-items: center;
+        }
+
+        .input-with-button input {
+            flex-grow: 1;
+            border-top-right-radius: 0;
+            border-bottom-right-radius: 0;
+        }
+
+        .input-with-button button {
+            padding: 5px 10px;
+            border-top-left-radius: 0;
+            border-bottom-left-radius: 0;
+            border-left: 0;
+            line-height: 1.5;
+        }
         /* =================================================================== */
         /* ENDE DES NEUEN CSS-CODES                                            */
         /* =================================================================== */
@@ -177,6 +201,10 @@
                     Zusammenfassung erraten
                 </label>
                 <label>
+                    <input type="radio" name="game-mode" value="multipleChoice">
+                    Multiple-Choice-Quiz
+                </label>
+                <label>
                     <input type="radio" name="game-mode" value="readMode">
                     Bibel lesen
                 </label>
@@ -199,6 +227,13 @@
                     <div id="scope-selection-container" class="control-group" style="display: none;">
                         <label>Quiz-Bereich:</label>
                         <button id="open-scope-modal-button" class="button">Bereich auswählen</button>
+                    </div>
+                    <div id="seed-container" class="control-group">
+                        <label for="seed-input">Fragen-Seed:</label>
+                        <div class="input-with-button">
+                            <input type="text" id="seed-input" placeholder="Wort für Reihenfolge eingeben...">
+                            <button id="clear-seed-button" title="Seed entfernen" style="display: none;">&times;</button>
+                        </div>
                     </div>
                     <!-- ERSETZT: Alter Übungsmodus-Container -->
                     <!--
@@ -306,6 +341,12 @@
                             <button id="search-button" class="button">Suchen</button>
                             <button id="clear-search-button" class="button" style="display: none;">Löschen</button>
                         </div>
+                        <!-- NEU: Navigation für "Gehe zu" und "Zufälliges Kapitel" -->
+                        <div class="reading-navigation-controls" style="margin-top: 15px; display: flex; gap: 5px;">
+                            <input type="text" id="reference-input" placeholder="z.B. Johannes 3,16" style="flex-grow: 1;">
+                            <button id="goto-reference-button" class="quiz-button">Gehe zu</button>
+                            <button id="random-chapter-button" class="quiz-button">Zufälliges Kapitel</button>
+                        </div>
                     </div>
                     <!-- NEU: Obere Navigation für den Lese-Modus -->
                     <div id="reading-nav-top" class="context-nav" style="display: none; margin-bottom: 10px;">
@@ -313,6 +354,18 @@
                         <button class="reading-next-chapter">Nächstes Kapitel &raquo;</button>
                     </div>
                     <p id="verse-text-display" class="verse-display">Lade Verse...</p>
+                    <!-- NEU: Container für Multiple-Choice-Optionen -->
+                    <div id="mc-options-container" class="mc-options"></div>
+                    <!-- In index.html einfügen -->
+                    <div id="mc-quiz-options" class="quiz-controls" style="display: none; flex-direction: column; align-items: flex-start; margin-top: 1rem;">
+                        <label class="control-label">Reihenfolge der Fragen:</label>
+                        <div class="radio-group">
+                            <input type="radio" id="mc-order-random" name="mc-order" value="random" checked>
+                            <label for="mc-order-random">Zufällig</label>
+                            <input type="radio" id="mc-order-sequential" name="mc-order" value="sequential">
+                            <label for="mc-order-sequential">Der Reihe nach</label>
+                        </div>
+                    </div>
                     <!-- NEU: Navigation für den Lese-Modus -->
                     <div id="reading-nav-bottom" class="context-nav" style="display: none; margin-top: 10px;">
                         <button class="reading-prev-chapter">&laquo; Vorheriges Kapitel</button>
