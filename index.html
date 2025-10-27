@@ -3,6 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- HINZUFÜGEN: Content-Security-Policy für Cordova -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self' data: gap: https://ssl.gstatic.com 'unsafe-eval'; style-src 'self' 'unsafe-inline'; media-src *; img-src 'self' data: content:;">
+    
     <title>Bibel-Quiz</title>
     <link rel="stylesheet" href="style.css">
     <!-- HINWEIS: Ich habe den <style>-Block aufgeräumt und korrigiert -->
@@ -126,6 +129,69 @@
             background-color: yellow;
             font-weight: bold;
         }
+        .highlight-context { /* KORREKTUR: Selektor vereinfacht, um global zu gelten */
+            background-color: #d4edda; /* Hellgrün */
+            font-weight: bold;
+        }
+        /* NEU: Stil für die Lückensuche */
+        .gap-underline {
+            text-decoration: underline;
+            text-decoration-color: #0056b3;
+        }
+        /* NEU: Stile für die erweiterte Suche */
+        .search-rank-container {
+            margin-bottom: 20px;
+        }
+        .search-rank-list {
+            list-style-type: none;
+            padding-left: 0;
+        }
+        .search-rank-list li {
+            padding: 5px;
+            border-bottom: 1px solid #eee;
+        }
+        .search-rank-list a {
+            text-decoration: none;
+            color: #0056b3;
+            cursor: pointer;
+        }
+        .search-rank-list a:hover {
+            text-decoration: underline;
+        }
+        .search-rank-list .count {
+            font-weight: bold;
+            float: right;
+            color: #333;
+        }
+        /* NEU: Layout für nebeneinander liegende Statistiken */
+        .search-stats-wrapper {
+            display: flex;
+            gap: 20px;
+            justify-content: space-between;
+            margin-bottom: 20px;
+        }
+        .search-stats-wrapper .search-rank-container {
+            flex: 1;
+            margin-bottom: 0;
+            display: flex;
+            flex-direction: column;
+        }
+        .rank-pagination {
+            margin-top: 10px;
+        }
+        /* NEU: Stil für den Dichte-Sortier-Link */
+        .sort-density-link {
+            font-size: 0.8em;
+            font-weight: normal;
+            margin-left: 8px;
+        }
+        /* NEU: Stil für den Dichte-Anzeige-Link */
+        .density-link {
+            font-size: 0.8em;
+            color: #555;
+            margin-left: 5px;
+            cursor: pointer;
+        }
         #seed-container {
             margin-top: 15px;
         }
@@ -147,6 +213,35 @@
             border-bottom-left-radius: 0;
             border-left: 0;
             line-height: 1.5;
+        }
+        /* NEU: Stile für die MC-Fragen-Zähler */
+        .mc-counters {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 20px; /* Mehr Abstand zwischen den Zählern */
+            justify-content: center;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+        .mc-counter-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .progress-circle {
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            /* Erzeugt einen "Torten"-Effekt mit conic-gradient */
+            /* Die --progress-angle Variable wird per JS gesetzt */
+            background: conic-gradient(
+                #007bff var(--progress-angle, 0deg), 
+                #e0e0e0 var(--progress-angle, 0deg)
+            );
+            flex-shrink: 0; /* Verhindert, dass der Kreis schrumpft */
+        }
+        .mc-counter-item span {
+            font-size: 0.9em;
         }
         /* =================================================================== */
         /* ENDE DES NEUEN CSS-CODES                                            */
@@ -214,26 +309,24 @@
             <!-- Linke Spalte: Tipp-Eingabe -->
             <div class="quiz-input-column">
                 <!-- KORREKTUR: Die Tabs werden entfernt und alle Steuerelemente in einem Fieldset zusammengefasst -->
+                <!-- KORREKTUR: Seed und Bereichsauswahl sind jetzt außerhalb des guess-controls Fieldsets -->
+                <div id="seed-container" class="control-group">
+                    <label for="seed-input">Fragen-Seed:</label>
+                    <div class="input-with-button" style="display: flex; align-items: center; gap: 5px;">
+                        <input type="text" id="seed-input" placeholder="Wort für Reihenfolge eingeben...">
+                        <button id="show-seed-explanation-button" class="button" title="Wie funktioniert das?" style="padding: 5px 8px; line-height: 1;">?</button>
+                        <button id="clear-seed-button" title="Seed entfernen" style="display: none;">&times;</button>
+                    </div>
+                </div>
+                <div id="scope-selection-container" class="control-group" style="display: none;">
+                    <label>Quiz-Bereich:</label>
+                    <button id="open-scope-modal-button" class="button">Bereich auswählen</button>
+                </div>
+                
                 <fieldset id="guess-controls">
                     <legend>Dein Tipp</legend>
-
-                    <!-- NEUE ANORDNUNG: Buch/Kapitel/Vers jetzt oben -->
                     <fieldset class="sub-fieldset">
                         <legend>Buch, Kapitel, Vers</legend>
-                        <!-- ZURÜCK ZUM DROPDOWN: Buch-Auswahl -->
-                    <!-- NEU: Container für die Bereichsauswahl -->
-                    <div id="scope-selection-container" class="control-group" style="display: none;">
-                        <label>Quiz-Bereich:</label>
-                        <button id="open-scope-modal-button" class="button">Bereich auswählen</button>
-                    </div>
-                    <div id="seed-container" class="control-group">
-                        <label for="seed-input">Fragen-Seed:</label>
-                        <div class="input-with-button" style="display: flex; align-items: center; gap: 5px;">
-                            <input type="text" id="seed-input" placeholder="Wort für Reihenfolge eingeben...">
-                            <button id="show-seed-explanation-button" class="button" title="Wie funktioniert das?" style="padding: 5px 8px; line-height: 1;">?</button>
-                            <button id="clear-seed-button" title="Seed entfernen" style="display: none;">&times;</button>
-                        </div>
-                    </div>
                     <!-- ERSETZT: Alter Übungsmodus-Container -->
                     <!--
                     <div id="practice-mode-container" class="control-group" style="display: none;">
@@ -314,15 +407,36 @@
                 <!-- NEU: Button-Position geändert für bessere Sichtbarkeit -->
                 <div class="quiz-actions">
                     <button id="guess-button">Tipp abgeben</button>
+                    <!-- NEU: Container für die Seed-Navigation -->
+                    <div id="seeded-nav-container" style="display: none; align-items: center; gap: 10px;">
+                        <button id="prev-task-button" class="button">&laquo; Zurück</button>
+                        <span id="seeded-counter">Aufgabe 1 / X</span>
+                        <button id="next-task-button" class="button">Weiter &raquo;</button>
+                    </div>
                      <button id="new-verse-button" style="display: none;">Neue Runde</button>
                 </div>
+                <!-- NEU: Slider für die Aufgaben-Navigation (Seed / Sequenziell) -->
+                <fieldset id="task-slider-container" class="sub-fieldset" style="display: none;">
+                    <legend>Aufgaben-Navigation</legend>
+                    <div class="slider-container">
+                        <label for="task-slider">Aufgabe:</label>
+                        <output for="task-slider" id="task-slider-output">1</output>
+                        <div class="slider-wrapper">
+                            <input type="range" id="task-slider" min="1" value="1" class="detail-slider">
+                        </div>
+                    </div>
+                </fieldset>
             </div>
             <!-- Rechte Spalte: Anzeige und Ergebnisse -->
             <div class="quiz-display-column" id="verse-display-section">
                 <fieldset>
                     <legend id="verse-display-legend">Zu erratende Aufgabe</legend>
-                    <!-- NEU: Optionen für den Lese-Modus -->
                     <div id="reading-options-container" style="display: none; margin-bottom: 10px;">
+                        <!-- NEU: Bereichsauswahl für die Suche -->
+                        <div id="search-scope-container" class="control-group">
+                            <label>Such-Bereich:</label>
+                            <button id="open-search-scope-modal-button" class="button">Bereich auswählen</button>
+                        </div>
                         <label>
                             <input type="checkbox" id="show-summaries-checkbox">
                             Zusammenfassungen anzeigen
@@ -334,6 +448,15 @@
                             <label><input type="radio" name="summary-pos" value="left"> Links</label>
                             <label><input type="radio" name="summary-pos" value="right"> Rechts</label>
                         </fieldset>
+                        <label style="margin-top: 10px; display: block;">
+                            <input type="checkbox" id="partial-word-search-checkbox">
+                            Teilwort-Suche (z.B. "eher" bei Suche nach "ehe" finden)
+                        </label>
+                        <!-- KORREKTUR: Option für Such-Statistiken nur hier und standardmäßig deaktiviert -->
+                        <label style="margin-top: 10px; display: block;">
+                            <input type="checkbox" id="show-search-stats-checkbox">
+                            Statistiken anzeigen (Vorkommen nach Buch/Kapitel/Vers)
+                        </label>
                         <!-- NEU: Suchfunktion für den Lese-Modus -->
                         <div id="reading-search-container" style="margin-top: 15px; display: flex; gap: 5px;">
                             <input type="text" id="search-input" placeholder="Suche in der Bibel..." style="flex-grow: 1;">
@@ -346,15 +469,28 @@
                             <button id="goto-reference-button" class="quiz-button">Gehe zu</button>
                             <button id="random-chapter-button" class="quiz-button">Zufälliges Kapitel</button>
                         </div>
+                        <!-- NEU: Container für die Lückensuche (wurde beim letzten Mal vergessen) -->
+                        <div id="gap-search-container" style="margin-top: 15px;">
+                            <h4>Längste Abschnitte ohne...</h4>
+                            <input type="text" id="gap-search-input" placeholder="z.B. Gott ++ Herr">
+                            <button id="gap-search-button" class="button">Lücken finden</button>
+                        </div>
                     </div>
                     <!-- NEU: Obere Navigation für den Lese-Modus -->
                     <div id="reading-nav-top" class="context-nav" style="display: none; margin-bottom: 10px;">
                         <button class="reading-prev-chapter">&laquo; Vorheriges Kapitel</button>
                         <button class="reading-next-chapter">Nächstes Kapitel &raquo;</button>
                     </div>
+                    <!-- NEU: Container für die MC-Fragen-Zähler -->
+                    <div id="mc-question-counters" class="mc-counters" style="display: none;"></div>
                     <p id="verse-text-display" class="verse-display">Lade Verse...</p>
                     <!-- NEU: Container für Multiple-Choice-Optionen -->
                     <div id="mc-options-container" class="mc-options"></div>
+                    <!-- NEU: Stil für die Vers-Hervorhebung im Lesemodus -->
+                    <style>
+                        .reading-highlight { background-color: yellow; }
+                    </style>
+
                     <!-- In index.html einfügen -->
                     <div id="mc-quiz-options" class="quiz-controls" style="display: none; flex-direction: column; align-items: flex-start; margin-top: 1rem;">
                         <label class="control-label">Reihenfolge der Fragen:</label>
@@ -463,8 +599,13 @@
 
 
     <!-- Skripte -->
+    <!-- HINZUFÜGEN: Cordova-Skript. Muss VOR Ihren anderen Skripten stehen. -->
+    <script src="cordova.js"></script>
     <script src="socket.io/socket.io.js"></script>
     <script src="client.js"></script>
+    <!-- FÜR MULTIPLAYER: Die folgenden zwei Zeilen wieder einkommentieren, um den Multiplayer-Modus zu aktivieren. -->
+    <!-- <script src="socket.io/socket.io.js"></script> -->
+    <!-- <script src="client.js"></script> -->
     <script src="bibelquiz.js"></script>
 </body>
 </html>

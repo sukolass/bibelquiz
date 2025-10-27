@@ -20,6 +20,7 @@ document.addEventListener('mainScriptReady', async () => {
         const seedExplanationModal = document.getElementById('seed-explanation-modal');
         const closeSeedExplanationModalButton = document.getElementById('close-seed-explanation-modal-button');
         const seedExplanationContent = document.getElementById('seed-explanation-content');
+        const seedContainer = document.getElementById('seed-container'); // KORREKTUR: Fehlende Variablendeklaration
         const mcOptionsContainer = document.getElementById('mc-options-container'); // NEU
         // NEU: Optionen für den MC-Modus (Reihenfolge)
         const seedInput = document.getElementById('seed-input'); // NEU für Seed
@@ -33,10 +34,19 @@ document.addEventListener('mainScriptReady', async () => {
         const readingNavBottom = document.getElementById('reading-nav-bottom');
         const searchInput = document.getElementById('search-input');
         const searchButton = document.getElementById('search-button');
+        // NEU: Zusätzliche UI-Elemente für die Suche (Checkboxen)
+        const showSearchStatsCheckbox = document.getElementById('show-search-stats-checkbox');
+        const searchScopeContainer = document.getElementById('search-scope-container'); // Container für den Button
+        const openSearchScopeModalButton = document.getElementById('open-search-scope-modal-button');
+        const partialWordSearchCheckbox = document.getElementById('partial-word-search-checkbox'); // NEU
         // NEU: Elemente für die "Gehe zu"-Funktion im Lesemodus
         const referenceInput = document.getElementById('reference-input');
         const gotoReferenceButton = document.getElementById('goto-reference-button');
         const randomChapterButton = document.getElementById('random-chapter-button');
+        // NEU: Elemente für die Lückensuche
+        const gapSearchContainer = document.getElementById('gap-search-container');
+        const gapSearchInput = document.getElementById('gap-search-input');
+        const gapSearchButton = document.getElementById('gap-search-button');
         const clearSearchButton = document.getElementById('clear-search-button');
 
         const applyScopeButton = document.getElementById('apply-scope-button');
@@ -75,6 +85,12 @@ document.addEventListener('mainScriptReady', async () => {
         const hostInfoDiv = document.getElementById('host-info');
         const hostAddressesDiv = document.getElementById('host-addresses');
         // NEU: Elemente für die Kontextansicht
+        // NEU: Elemente für die Seed-Navigation
+        const seededNavContainer = document.getElementById('seeded-nav-container');
+        const prevTaskButton = document.getElementById('prev-task-button');
+        const nextTaskButton = document.getElementById('next-task-button');
+        const seededCounter = document.getElementById('seeded-counter');
+        const mcQuestionCounters = document.getElementById('mc-question-counters');
         const showContextButton = document.getElementById('show-context-button');
         const contextView = document.getElementById('context-view');
         const contextTitle = document.getElementById('context-title');
@@ -83,6 +99,10 @@ document.addEventListener('mainScriptReady', async () => {
         const prevChapterButtons = document.querySelectorAll('.prev-chapter-button'); // NEU
         const nextChapterButtons = document.querySelectorAll('.next-chapter-button'); // NEU
         const closeContextButton = document.getElementById('close-context-button');
+        // NEU: Elemente für den Aufgaben-Slider
+        const taskSliderContainer = document.getElementById('task-slider-container');
+        const taskSlider = document.getElementById('task-slider');
+        const taskSliderOutput = document.getElementById('task-slider-output');
 
     // --- Bibelquiz State ---
     let allVerses = [];
@@ -117,6 +137,15 @@ document.addEventListener('mainScriptReady', async () => {
     let randomGenerator = Math.random; // Standardmäßig den normalen Zufallsgenerator verwenden
     let currentSeedString = '';
 
+    // NEU: Zustand für den Seed-basierten sequenziellen Modus
+    let seededQueue = [];
+    let seededQueueIndex = 0;
+    // NEU: Character-Counts für die Dichte-Sortierung
+    let bookCharCounts = {};
+    let chapterCharCounts = {};
+    let searchRankVisibleCounts = { book: 10, chapter: 10, verse: 10 }; // NEU für "Mehr anzeigen"
+    let searchResultOffset = 0; // NEU für Paginierung der Suchergebnisliste
+
 
     // NEU: Definitionen für Buchgruppen
     const BOOK_GROUPS = {
@@ -144,8 +173,7 @@ document.addEventListener('mainScriptReady', async () => {
         "2. Johannes", "3. Johannes", "Judas", "Offenbarung"
     ];
 
-    // DEBUG: Überprüfen, ob alle kritischen Elemente gefunden wurden
-    if (!bibleQuizView || !bookSelect || !positionSlider || !ctx || !contextView || !showContextButton || !hostInfoDiv || !gameModeSelection || !scopeSelectionContainer || !quizInputColumn || !contextSummary || !searchInput || !referenceInput || !gotoReferenceButton || !randomChapterButton || !mcQuizOptions || !seedInput || !clearSeedButton || !seedExplanationModal) {
+    if (!bibleQuizView || !bookSelect || !positionSlider || !ctx || !contextView || !showContextButton || !hostInfoDiv || !gameModeSelection || !scopeSelectionContainer || !quizInputColumn || !contextSummary || !searchInput || !referenceInput || !gotoReferenceButton || !randomChapterButton || !mcQuizOptions || !seedInput || !clearSeedButton || !seedExplanationModal || !seededNavContainer || !mcQuestionCounters || !taskSliderContainer || !taskSlider || !taskSliderOutput || !partialWordSearchCheckbox || !showSearchStatsCheckbox || !searchScopeContainer || !openSearchScopeModalButton || !seedContainer || !gapSearchContainer || !gapSearchInput || !gapSearchButton) {
         console.error('[FATAL] Ein oder mehrere kritische Bibelquiz-Elemente wurden im HTML nicht gefunden. Skript wird angehalten.');
         return;
     }
@@ -265,6 +293,16 @@ document.addEventListener('mainScriptReady', async () => {
                 BOOK_GROUPS.PROPHETS = [...BOOK_GROUPS.MAJOR_PROPHETS, ...BOOK_GROUPS.MINOR_PROPHETS];
                 populateScopeBookList(); // Fülle die UI für die Bereichsauswahl
 
+                // NEU: Berechne die Zeichenanzahl für Bücher und Kapitel für die Dichte-Sortierung
+                allVerses.forEach(verse => {
+                    const book = verse.book;
+                    const chapterRef = `${book} ${verse.chapter}`;
+                    const verseLength = verse.text.length;
+
+                    bookCharCounts[book] = (bookCharCounts[book] || 0) + verseLength;
+                    chapterCharCounts[chapterRef] = (chapterCharCounts[chapterRef] || 0) + verseLength;
+                });
+
                 return true; // Signalisiert Erfolg
             } else {
                 console.error('[Bibelquiz] FEHLER: Obwohl die Datei geladen wurde, konnten keine gültigen Verse extrahiert werden.');
@@ -275,6 +313,7 @@ document.addEventListener('mainScriptReady', async () => {
         } catch (error) {
             console.error("[FATAL] Kritischer Fehler beim Laden oder Verarbeiten der 'verse.txt':", error);
             verseTextDisplay.textContent = `Fehler: ${error.message}. Prüfe die Konsole (F12).`;
+            resolveVersesLoaded(false); // KORREKTUR: Promise auch im Fehlerfall auflösen
             return false;
         }
     }
@@ -416,14 +455,23 @@ document.addEventListener('mainScriptReady', async () => {
 
     // --- Spiellogik ---
     function startNewRound() {
-        if (quizMode === 'guessVerse') {
-            displayNewVerse();
-        } else if (quizMode === 'guessChapter') {
-            displayNewChapterHeadings();
-        } else if (quizMode === 'guessSummary') {
-            displayNewSummary();
-        } else if (quizMode === 'multipleChoice') {
-            displayNewMcQuestion();
+        // NEU: Wenn ein Seed aktiv ist, navigiere in der Queue
+        if (currentSeedString) {
+            // Im Seed-Modus wird die nächste Aufgabe über die Navigationsbuttons gesteuert.
+            // Der "Nächste Runde"-Button springt einfach zum nächsten Element.
+            displayTaskFromSeededQueue(seededQueueIndex + 1);
+        }
+        else {
+            // Alte Logik für den zufälligen Modus ohne Seed
+            if (quizMode === 'guessVerse') {
+                displayNewVerse();
+            } else if (quizMode === 'guessChapter') {
+                displayNewChapterHeadings();
+            } else if (quizMode === 'guessSummary') {
+                displayNewSummary();
+            } else if (quizMode === 'multipleChoice') {
+                displayNewMcQuestion();
+            }
         }
     }
 
@@ -444,6 +492,43 @@ document.addEventListener('mainScriptReady', async () => {
         return filtered;
     }
 
+    // NEU: Funktion zum Anzeigen einer Aufgabe aus der Seed-Queue
+    function displayTaskFromSeededQueue(index) {
+        if (index < 0 || index >= seededQueue.length) {
+            console.warn(`[Seed-Modus] Ungültiger Index ${index} für die Aufgaben-Queue.`);
+            return;
+        }
+        // KORREKTUR: Stelle sicher, dass der Index im gültigen Bereich bleibt
+        if (index >= seededQueue.length) {
+            index = 0; // Am Ende angekommen, fange von vorne an
+        } else if (index < 0) {
+            index = seededQueue.length - 1; // Vom Anfang zurück, gehe zum Ende
+        }
+        seededQueueIndex = index;
+        const task = seededQueue[index];
+    
+        // Setze den internen Zustand basierend auf dem Aufgabentyp
+        currentVerse = quizMode === 'guessVerse' ? task : null;
+        currentChapterHeadings = quizMode === 'guessChapter' ? task : null;
+        currentSummary = quizMode === 'guessSummary' ? task : null;
+        currentMcQuestion = quizMode === 'multipleChoice' ? task : null;
+    
+        // Rufe die entsprechende Anzeigefunktion auf
+        if (quizMode === 'guessVerse') displayVerseContent(task);
+        if (quizMode === 'guessChapter') displayChapterHeadingsContent(task);
+        if (quizMode === 'guessSummary') displaySummaryContent(task);
+        if (quizMode === 'multipleChoice') displayMcQuestionContent(task);
+    
+        // Aktualisiere die Navigations-UI
+        seededCounter.textContent = `Aufgabe ${index + 1} von ${seededQueue.length}`;
+        prevTaskButton.disabled = index === 0;
+        nextTaskButton.disabled = index >= seededQueue.length - 1;
+        // NEU: Aufgaben-Slider aktualisieren
+        taskSlider.max = seededQueue.length;
+        taskSlider.value = index + 1;
+        taskSliderOutput.textContent = `${index + 1} / ${seededQueue.length}`;
+    }
+
     // NEU (Zusammenfassungs-Quiz): Funktion zum Anzeigen einer neuen Zusammenfassung
     function displayNewSummary() {
         let summaryPool = filterPoolByScope(allSummaries);
@@ -457,19 +542,14 @@ document.addEventListener('mainScriptReady', async () => {
             return;
         }
 
-        currentSummary = summaryPool[Math.floor(randomGenerator() * summaryPool.length)];
-        currentVerse = null;
-        currentChapterHeadings = null;
+        const summary = summaryPool[Math.floor(randomGenerator() * summaryPool.length)];
+        displaySummaryContent(summary);
+    }
 
-        verseTextDisplay.innerHTML = `<h3>Welches Kapitel wird hier zusammengefasst?</h3><p>${currentSummary.summary}</p>`;
-
-        feedbackMessage.textContent = "";
-        feedbackMessage.className = "";
-        statsDisplay.textContent = "Mache einen Tipp, um die Entfernung zu sehen.";
-        guessButton.disabled = false;
-        clearCanvas();
-        contextView.style.display = 'none';
-        setInitialSelection();
+    function displaySummaryContent(summary) {
+        currentSummary = summary;
+        verseTextDisplay.innerHTML = `<h3>Welches Kapitel wird hier zusammengefasst?</h3><p>${summary.summary}</p>`;
+        resetFeedbackAndControls();
     }
 
     function displayNewChapterHeadings() {
@@ -481,104 +561,103 @@ document.addEventListener('mainScriptReady', async () => {
             } else {
                 verseTextDisplay.textContent = 'Keine Kapitel-Überschriften geladen. Bitte erstelle eine "headings.txt".';
             }
-            verseTextDisplay.textContent = 'Keine Kapitel-Überschriften geladen. Bitte erstelle eine "headings.txt".';
             return;
         }
 
         // Wähle ein zufälliges Kapitel aus dem (gefilterten) Pool
-        currentChapterHeadings = chapterPool[Math.floor(randomGenerator() * chapterPool.length)];
+        const chapter = chapterPool[Math.floor(randomGenerator() * chapterPool.length)];
+        displayChapterHeadingsContent(chapter);
+    }
 
-
-        currentVerse = null; // Sicherstellen, dass der alte Zustand gelöscht ist
-        currentSummary = null;
-
+    function displayChapterHeadingsContent(chapter) {
+        currentChapterHeadings = chapter;
         // Formatiere die Überschriften als Liste
         let headingsHtml = "<h3>Welches Kapitel hat diese Überschriften?</h3><ul>";
-        currentChapterHeadings.headings.forEach(h => { headingsHtml += `<li>${h}</li>`; });
+        chapter.headings.forEach(h => { headingsHtml += `<li>${h}</li>`; });
         headingsHtml += "</ul>";
         verseTextDisplay.innerHTML = headingsHtml;
-
-        feedbackMessage.textContent = "";
-        feedbackMessage.className = "";
-        statsDisplay.textContent = "Mache einen Tipp, um die Entfernung zu sehen.";
-        guessButton.disabled = false;
-        clearCanvas();
-        
-        // NEU: Kontextansicht ausblenden, wenn eine neue Runde beginnt
-        contextView.style.display = 'none';
-
-        // Setze die Auswahl-UI auf den Standardwert zurück
-        setInitialSelection();
+        resetFeedbackAndControls();
     }
 
     // NEU (Multiple-Choice-Quiz): Funktion zum Anzeigen einer neuen Frage
     function displayNewMcQuestion() {
+        // KORREKTUR: Die Logik zum Erstellen der Fragen-Warteschlange wird jetzt zentralisiert
+        // und bei jedem Aufruf ausgeführt, um sicherzustellen, dass der Scope immer korrekt ist.
         const orderMode = document.querySelector('input[name="mc-order"]:checked').value;
-        // KORREKTUR: Deklariere die Variablen hier, damit sie in der ganzen Funktion gültig sind.
-        let booksWithQuestions = Object.keys(allMcQuestions);
-        let booksInScope = [];
+        
+        // --- Schritt 1: Baue die Fragenliste basierend auf dem Scope neu auf ---
+        mcQuestionQueue = [];
+        const allBooksWithQuestions = Object.keys(allMcQuestions);
+        
+        // Filtere zuerst die Bücher
+        const booksInScope = customScope.active && customScope.books.length > 0
+            ? allBooksWithQuestions.filter(book => customScope.books.includes(book))
+            : allBooksWithQuestions;
 
-        // Wenn die Warteschlange leer ist oder der Modus "Zufällig" ist, muss sie neu aufgebaut werden.
-        if (mcQuestionQueue.length === 0 || orderMode === 'random') {
-            mcQuestionQueue = [];
-            mcCurrentIndex = 0;
-            booksInScope = customScope.active && customScope.books.length > 0 
-                ? booksWithQuestions.filter(book => customScope.books.includes(book)) 
-                : booksWithQuestions;
-            const canonicalBookOrder = bookChapterStructure.map(b => b.book);
+        // Iteriere durch die gefilterten Bücher
+        for (const book of booksInScope) {
+            const allChaptersForBook = Object.keys(allMcQuestions[book] || {}).map(Number);
+            
+            // Filtere dann die Kapitel für jedes Buch
+            const chaptersInScope = customScope.active && customScope.chapters[book]?.length > 0
+                ? allChaptersForBook.filter(ch => customScope.chapters[book].includes(ch))
+                : allChaptersForBook;
 
-            // Sortiere die Bücher in kanonischer Reihenfolge
-            // KORREKTUR: Behalte Bücher bei, die nicht in der kanonischen Reihenfolge (aus verse.txt) gefunden werden.
-            // Diese werden ans Ende der Liste sortiert, anstatt sie zu verwerfen.
-            const sortedBooksInScope = booksInScope.sort((a, b) => {
-                const indexA = canonicalBookOrder.indexOf(a);
-                const indexB = canonicalBookOrder.indexOf(b);
-                return (indexA === -1 ? Infinity : indexA) - (indexB === -1 ? Infinity : indexB);
-            });
-
-            for (const book of sortedBooksInScope) {
-                if (allMcQuestions[book]) {
-                    // Wenn kein spezifisches Kapitel im Scope ausgewählt ist, nimm alle Kapitel des Buches
-                    const chaptersForBook = (customScope.active && customScope.chapters[book]?.length > 0)
-                        ? customScope.chapters[book]
-                        : Object.keys(allMcQuestions[book]).map(Number);
-
-                    // Sortiere die Kapitel numerisch
-                    const sortedChapters = chaptersForBook.sort((a, b) => a - b);
-
-                    for (const chapter of sortedChapters) {
-                        if (allMcQuestions[book][chapter]) {
-                            allMcQuestions[book][chapter].forEach(q => {
-                                mcQuestionQueue.push({ ...q, book, chapter: parseInt(chapter, 10) });
-                            });
-                        }
-                    }
+            // Sammle die Fragen aus den gefilterten Kapiteln
+            for (const chapter of chaptersInScope) {
+                if (allMcQuestions[book]?.[chapter]) {
+                    allMcQuestions[book][chapter].forEach(q => {
+                        mcQuestionQueue.push({ ...q, book, chapter: parseInt(chapter, 10) });
+                    });
                 }
             }
         }
 
+        // --- Schritt 2: Sortiere die Liste, falls der Modus "Der Reihe nach" ist ---
+        if (orderMode === 'sequential') {
+            const canonicalBookOrder = bookChapterStructure.map(b => b.book);
+            mcQuestionQueue.sort((a, b) => {
+                const bookIndexA = canonicalBookOrder.indexOf(a.book);
+                const bookIndexB = canonicalBookOrder.indexOf(b.book);
+                if (bookIndexA !== bookIndexB) return (bookIndexA === -1 ? Infinity : bookIndexA) - (bookIndexB === -1 ? Infinity : bookIndexB);
+                if (a.chapter !== b.chapter) return a.chapter - b.chapter;
+                // Hier könnte eine Sortierung nach Frage-ID erfolgen, falls vorhanden
+                return 0;
+            });
+        }
+
+        // --- Schritt 3: Zeige die Frage an ---
         if (mcQuestionQueue.length === 0) {
-            // KORREKTUR: Ersetze die generische Fehlermeldung durch eine detaillierte Diagnose.
-            diagnoseMcQuestionIssue(booksWithQuestions, booksInScope);
+            diagnoseMcQuestionIssue(allBooksWithQuestions, booksInScope);
             mcOptionsContainer.innerHTML = '';
             return;
         }
 
         if (orderMode === 'random') {
-            // Wähle eine zufällige Frage aus der neu erstellten (gefilterten) Liste
-            currentMcQuestion = mcQuestionQueue[Math.floor(randomGenerator() * mcQuestionQueue.length)];
+            const question = mcQuestionQueue[Math.floor(randomGenerator() * mcQuestionQueue.length)];
+            displayMcQuestionContent(question);
         } else { // Sequential Mode
+            // Wenn der Index zurückgesetzt werden muss (z.B. nach Scope-Änderung)
             if (mcCurrentIndex >= mcQuestionQueue.length) {
-                // Alle Fragen wurden beantwortet, fange von vorne an.
                 mcCurrentIndex = 0;
+            }
+
+            if (mcCurrentIndex >= mcQuestionQueue.length) {
                 verseTextDisplay.innerHTML = `<h3>Runde beendet!</h3><p>Alle ${mcQuestionQueue.length} Fragen aus dem ausgewählten Bereich wurden beantwortet. Klicke auf "Nächste Runde", um erneut zu beginnen.</p>`;
                 mcOptionsContainer.innerHTML = '';
                 guessButton.disabled = true;
                 return;
             }
-            currentMcQuestion = mcQuestionQueue[mcCurrentIndex];
+            const question = mcQuestionQueue[mcCurrentIndex];
+            displayMcQuestionContent(question);
             mcCurrentIndex++;
         }
+        console.log("[MC-Debug] displayNewMcQuestion - mcQuestionQueue Länge nach Aufbau:", mcQuestionQueue.length, "orderMode:", orderMode, "currentSeedString:", currentSeedString);
+        // NEU: Aufgaben-Slider für den sequenziellen MC-Modus ohne Seed
+        if (orderMode === 'sequential' && !currentSeedString && mcQuestionQueue.length > 0) {
+            taskSlider.max = mcQuestionQueue.length;
+            taskSlider.value = mcCurrentIndex; // mcCurrentIndex ist bereits um 1 erhöht
+        } 
 
         // NEU: Diagnose-Funktion, um zu analysieren, warum keine Fragen gefunden wurden.
         function diagnoseMcQuestionIssue(allBooksFromJson, booksInCurrentScope) {
@@ -610,11 +689,65 @@ document.addEventListener('mainScriptReady', async () => {
 
             verseTextDisplay.innerHTML = `<div style="text-align: left; white-space: pre-wrap;">${diagnosis}</div>`;
         }
+    }
 
+    function displayMcQuestionContent(question) {
+        currentMcQuestion = question;
         currentVerse = null;
         currentChapterHeadings = null;
         currentSummary = null;
 
+        // NEU: Detaillierte Zähler berechnen und anzeigen
+        const isSequential = document.querySelector('input[name="mc-order"]:checked').value === 'sequential';
+
+        console.log("[MC-Debug] displayMcQuestionContent - isSequential:", isSequential, "currentSeedString:", currentSeedString, "mcQuestionQueue.length:", mcQuestionQueue.length, "seededQueue.length:", seededQueue.length);
+
+        // KORREKTUR: Die Zähler sollen angezeigt werden, wenn die Reihenfolge deterministisch ist.
+        // Das ist der Fall, wenn ein Seed aktiv ist ODER wenn der Modus "sequenziell" ohne Seed ist.
+        if (currentSeedString || (isSequential && mcQuestionQueue.length > 0)) {
+            const queue = currentSeedString ? seededQueue : mcQuestionQueue;
+            const currentIndex = currentSeedString ? seededQueueIndex : (mcCurrentIndex > 0 ? mcCurrentIndex - 1 : 0);
+
+            const totalInScope = queue.length;
+            const testamentQueue = queue.filter(q => bookChapterStructure.find(b => b.book === q.book)?.testament === bookChapterStructure.find(b => b.book === currentMcQuestion.book)?.testament);
+            const bookQueue = queue.filter(q => q.book === currentMcQuestion.book);
+            const chapterQueue = bookQueue.filter(q => q.chapter === currentMcQuestion.chapter);
+
+            const currentIndexInTestament = testamentQueue.findIndex(q => q.frage === currentMcQuestion.frage) + 1 || 1;
+            const currentIndexInBook = bookQueue.findIndex(q => q.frage === currentMcQuestion.frage) + 1 || 1;
+            const currentIndexInChapter = chapterQueue.findIndex(q => q.frage === currentMcQuestion.frage) + 1 || 1;
+            console.log("[MC-Debug] displayMcQuestionContent - Zähler werden angezeigt.");
+            
+            // KORREKTUR: Aktualisiere den Haupt-Aufgabenzähler in der Navigationsleiste.
+            seededCounter.textContent = `Aufgabe ${currentIndex + 1} von ${totalInScope}`;
+
+            // KORREKTUR: Detailliertere Labels und visuelle Kreise hinzufügen
+            const testamentName = bookChapterStructure.find(b => b.book === currentMcQuestion.book)?.testament || '';
+            const bookName = currentMcQuestion.book;
+            const chapterNum = currentMcQuestion.chapter;
+ 
+            const progressTotal = (currentIndex + 1) / totalInScope;
+            const progressTestament = currentIndexInTestament / testamentQueue.length;
+            const progressBook = currentIndexInBook / bookQueue.length;
+            const progressChapter = currentIndexInChapter / chapterQueue.length;
+ 
+            let countersHtml = `
+                <div class="mc-counter-item"><div class="progress-circle" style="--progress-angle: ${progressTotal * 360}deg"></div><span>Gesamt: <strong>${currentIndex + 1}/${totalInScope}</strong></span></div>
+                <div class="mc-counter-item"><div class="progress-circle" style="--progress-angle: ${progressTestament * 360}deg"></div><span>${testamentName}: <strong>${currentIndexInTestament}/${testamentQueue.length}</strong></span></div>
+                <div class="mc-counter-item"><div class="progress-circle" style="--progress-angle: ${progressBook * 360}deg"></div><span>${bookName}: <strong>${currentIndexInBook}/${bookQueue.length}</strong></span></div>
+                <div class="mc-counter-item"><div class="progress-circle" style="--progress-angle: ${progressChapter * 360}deg"></div><span>Kapitel ${chapterNum}: <strong>${currentIndexInChapter}/${chapterQueue.length}</strong></span></div>
+            `;
+            mcQuestionCounters.innerHTML = countersHtml;
+            mcQuestionCounters.style.display = 'flex';
+        } else {
+            console.log("[MC-Debug] displayMcQuestionContent - Zähler NICHT angezeigt.");
+            mcQuestionCounters.style.display = 'none';
+        }
+
+        if (!currentMcQuestion) {
+            verseTextDisplay.innerHTML = "Fehler: Keine Frage zum Anzeigen vorhanden.";
+            return;
+        }
         let questionHtml = `<h3>${currentMcQuestion.frage} <span class="mc-ref">(${currentMcQuestion.book} ${currentMcQuestion.chapter})</span></h3>`;
         if (currentMcQuestion.einleitung) {
             questionHtml = `<p><em>${currentMcQuestion.einleitung}</em></p>${questionHtml}`;
@@ -648,36 +781,51 @@ document.addEventListener('mainScriptReady', async () => {
     function displayNewVerse() {
         let versePool = filterPoolByScope(allVerses);
 
-        if (versePool.length === 0) return;
+        if (versePool.length === 0) {
+            verseTextDisplay.textContent = "Keine Verse im ausgewählten Bereich gefunden.";
+            return;
+        }
 
         // Wähle einen zufälligen Vers aus dem (gefilterten) Pool
-        currentVerse = versePool[Math.floor(randomGenerator() * versePool.length)];
+        const verse = versePool[Math.floor(randomGenerator() * versePool.length)];
+        displayVerseContent(verse);
+    }
+
+    function displayVerseContent(verse) {
+        currentVerse = verse;
         currentChapterHeadings = null; // Sicherstellen, dass der alte Zustand gelöscht ist
         currentSummary = null;
-        verseTextDisplay.textContent = currentVerse.text;
+        verseTextDisplay.textContent = verse.text;
+        resetFeedbackAndControls();
+    }
 
+    function resetFeedbackAndControls() {
         feedbackMessage.textContent = "";
         feedbackMessage.className = "";
         statsDisplay.textContent = "Mache einen Tipp, um die Entfernung zu sehen.";
         guessButton.disabled = false;
         clearCanvas();
-        
         contextView.style.display = 'none';
-
-        setInitialSelection();
+        // setInitialSelection(); // KORREKTUR: Dieser Aufruf hat den Fehler verursacht und wird entfernt.
     }
 
     // NEU: Funktion für den Lese-Modus
-    function displayReadingChapter(book, chapter) {
+    function displayReadingChapter(book, chapter, options = {}) {
         // NEU: Berücksichtige den Scope für die Anzeige
         const availableBooks = customScope.active ? bookChapterStructure.filter(b => customScope.books.includes(b.book)) : bookChapterStructure;
         if (availableBooks.length === 0) {
+            // KORREKTUR: UI-Elemente für die Auswahl leeren/zurücksetzen
+            populateSelect(bookSelect, [], "Buch");
+            populateSelect(chapterSelect, [], "Kapitel");
+            populateSelect(verseSelect, [], "Vers");
             verseTextDisplay.innerHTML = `<h2>Keine Kapitel im ausgewählten Bereich</h2>`;
             return;
         }
 
+        const { highlightTerm = null, usePartialSearch = false } = options;
+
         if (!book || !chapter) {
-            const firstBook = availableBooks[0];
+            const firstBook = availableBooks[0] || bookChapterStructure[0];
             book = firstBook.book;
             chapter = firstBook.chapters[0];
         }
@@ -692,19 +840,51 @@ document.addEventListener('mainScriptReady', async () => {
         const chapterVerses = allVerses.filter(v => v.book === book && v.chapter === parseInt(chapter, 10)).sort((a, b) => a.verse_num - b.verse_num);
         
         let chapterHtml = '';
-        let summaryHtml = '';
+        let summaryHtml = ''; 
 
         // Füge Zusammenfassung hinzu, wenn gewünscht
         if (showSummariesCheckbox.checked) {
-            const summary = allSummaries.find(s => s.book === book && s.chapter === parseInt(chapter, 10));
+            const summary = allSummaries.find(s => s.book === book && s.chapter === parseInt(chapter, 10)); 
             if (summary) {
                 summaryHtml = `<p class="chapter-summary"><em>${summary.summary}</em></p>`;
             }
         }
 
         let verseHtml = `<h2>${book} ${chapter}</h2>`;
+        
+        let highlightRegex = null; // Initialisiere mit null
+        if (highlightTerm && highlightTerm.length > 0) {
+            // Stelle sicher, dass highlightTerm immer ein Array ist, um es konsistent zu verarbeiten
+            let termsToHighlight = [];
+            if (Array.isArray(highlightTerm)) {
+                termsToHighlight = highlightTerm;
+            } else if (typeof highlightTerm === 'string') { // KORREKTUR: Robuste String-Zerlegung
+                if (highlightTerm.includes('++')) {
+                    termsToHighlight = highlightTerm.split('++').map(t => t.trim()).filter(Boolean);
+                } else if (highlightTerm.includes('+')) {
+                    termsToHighlight = highlightTerm.split('+').map(t => t.trim()).filter(Boolean);
+                } else {
+                    // Fallback für falsch formatierte Strings (z.B. "a,il" aus altem Bug)
+                    termsToHighlight = highlightTerm.split(',').map(t => t.trim()).filter(Boolean);
+                }
+            }
+            // KORREKTUR: Erstelle ein Muster, das alle Suchbegriffe findet.
+            const highlightPattern = termsToHighlight.map(term => {
+                const escaped = term.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+                return usePartialSearch ? escaped : `\\b${escaped}\\b`;
+            }).join('|'); // Verbinde mehrere Begriffe mit ODER
+
+            if (highlightPattern) {
+                highlightRegex = new RegExp(highlightPattern, 'gi');
+            }
+        }
+
         chapterVerses.forEach(verse => {
-            verseHtml += `<p><sup>${verse.verse_num}</sup> ${verse.text}</p>`;
+            let verseText = verse.text;
+            if (highlightRegex) {
+                verseText = verseText.replace(highlightRegex, '<span class="highlight">$&</span>');
+            }
+            verseHtml += `<p data-verse-num="${verse.verse_num}"><sup>${verse.verse_num}</sup> ${verseText}</p>`;
         });
 
         if (summaryPosition === 'above') {
@@ -718,51 +898,464 @@ document.addEventListener('mainScriptReady', async () => {
         verseTextDisplay.innerHTML = chapterHtml;
 
         updateContextNavButtons(); // Aktualisiert die Navigations-Buttons
+
+        // KORREKTUR: Synchronisiere die Dropdowns und Slider für den Lesemodus
+        bookSelect.value = book;
+        updateChapterDropdown();
+        chapterSelect.value = chapter;
+        updateVerseDropdown();
+        syncSelectionToPosition(true); // `true` für Lesemodus-Verhalten
     }
 
     // NEU: Funktion zur Durchführung der Suche
-    function performSearch() {
-        const searchTerm = searchInput.value.trim();
-        if (searchTerm.length < 2) {
-            alert("Bitte gib mindestens 2 Zeichen für die Suche ein.");
+    function performSearch(options = {}) {
+        const { isPagination = false } = options;
+        if (!isPagination) {
+            searchResultOffset = 0; // Setze Offset bei jeder *neuen* Suche zurück
+        }
+
+        const searchInputText = searchInput.value.trim();
+        const usePartialSearch = partialWordSearchCheckbox.checked;
+        let searchTerms = [];
+        let searchMode = 'OR'; // Standard ist ODER
+
+        // NEU: Unterscheide zwischen UND (++) und ODER (+) Suche
+        if (searchInputText.includes('++')) {
+            searchTerms = searchInputText.split('++').map(t => t.trim()).filter(Boolean);
+            searchMode = 'AND';
+        } else {
+            searchTerms = searchInputText.split('+').map(t => t.trim()).filter(Boolean);
+            searchMode = 'OR';
+        }
+
+        if (searchTerms.length === 0) {
+            alert("Bitte gib mindestens einen Suchbegriff ein.");
             return;
         }
 
-        const results = allVerses.filter(verse => 
-            verse.text.toLowerCase().includes(searchTerm.toLowerCase())
-        );
+        // KORREKTUR: Im Lesemodus immer ein Zeichen für die Suche erlauben,
+        // unabhängig von der Teilwortsuche-Einstellung.
+        const minLength = (quizMode === 'readMode') ? 1 : (usePartialSearch ? 1 : 2);
 
-        displaySearchResults(results, searchTerm);
+        if (searchTerms.some(term => term.length < minLength)) {
+            alert(`Jeder Suchbegriff muss mindestens ${minLength} Zeichen lang sein.`);
+            return;
+        }
+
+        const searchPool = filterPoolByScope(allVerses);
+
+        const regexes = searchTerms.map(term => {
+            const escapedTerm = term.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+            return usePartialSearch ? new RegExp(escapedTerm, 'i') : new RegExp(`\\b${escapedTerm}\\b`, 'i');
+        });
+
+        let results;
+        if (searchMode === 'AND') {
+            // Finde alle Verse, die JEDE der Regexes erfüllen
+            results = searchPool.filter(verse => 
+                regexes.every(regex => regex.test(verse.text))
+            );
+        } else { // OR-Modus
+            // Finde alle Verse, die MINDESTENS EINE der Regexes erfüllen
+            results = searchPool.filter(verse => 
+                regexes.some(regex => regex.test(verse.text))
+            );
+        }
+
+        displaySearchResults(results, searchTerms, usePartialSearch, { searchMode, verseListOffset: searchResultOffset });
     }
 
     // NEU: Funktion zur Anzeige der Suchergebnisse
-    function displaySearchResults(results, searchTerm) {
-        let resultsHtml = `<h3>Suchergebnisse für "${searchTerm}" (${results.length} Treffer)</h3>`;
-        if (results.length === 0) {
-            resultsHtml += "<p>Keine Treffer gefunden.</p>";
+    function displaySearchResults(results, searchTerm, usePartialSearch, options = {}) {
+        const { bookFilter = null, searchMode = 'OR', verseListOffset = 0 } = options;
+        const WORKER_THRESHOLD = 5000; // Schwellenwert für die Nutzung des Web Workers
+
+        // --- 1. Rangliste erstellen ---
+        const bookCounts = {};
+        const chapterCounts = {};
+        const verseCounts = {}; // NEU: Zähler für Verse
+        // NEU: Detaillierte Zähler für UND-Suche
+        const bookDetailCounts = {};
+        const chapterDetailCounts = {};
+        const verseDetailCounts = {};
+
+        // Setze die Zähler für die sichtbaren Elemente bei jeder neuen Suche zurück
+        searchRankVisibleCounts = { book: 10, chapter: 10, verse: 10 };
+
+        // KORREKTUR: Erstelle eine globale Regex für jeden Suchbegriff, um alle Vorkommen zu zählen
+        
+        // --- 2. Detaillierte Vers-Liste erstellen (wird für beide Pfade benötigt) ---
+        let verseListHtml = '';
+        const filteredResults = bookFilter ? results.filter(r => r.book === bookFilter) : results;
+
+        // --- 3. Ranglisten-HTML und Vers-Listen-HTML generieren ---
+        let rankHtml = '';
+
+        const operator = searchMode === 'AND' ? ' ++ ' : ' + ';
+        const searchTermStringForLinks = Array.isArray(searchTerm) ? searchTerm.join(operator) : searchTerm;
+
+        // Helferfunktion zum Rendern der Ergebnisse, wird von beiden Pfaden (Worker/Main-Thread) genutzt
+        const renderResults = (sortedBooks, sortedChapters, sortedVerses, finalResults) => {
+            if (showSearchStatsCheckbox.checked && !bookFilter) { // Statistiken nur anzeigen, wenn Checkbox aktiv und kein Buch-Filter gesetzt ist
+            
+            // NEU: Button für alternative Sortierung bei UND-Suche
+            if (searchMode === 'AND' && Array.isArray(searchTerm) && searchTerm.length > 1) {
+                rankHtml += `<div class="rank-sort-toggle"><button id="toggle-rank-sort-button" class="button" data-sort-mode="sum">Nach Minimum sortieren</button></div>`;
+            }
+
+
+            const initialDisplayCount = 10;
+            rankHtml += '<div class="search-stats-wrapper">'; // NEU: Wrapper für Flexbox-Layout
+
+            // Helferfunktion für "Mehr anzeigen"-Button
+            const getShowMoreButton = (type, total) => {
+                return total > initialDisplayCount ? `<div class="rank-show-more-container"><button class="button show-more-rank" data-rank-type="${type}">+</button></div>` : '';
+            };
+
+            // NEU: Helferfunktion zur Anzeige der Detail-Counts für UND-Suchen
+            const getDetailCountHtml = (type, key, terms) => {
+                if (searchMode !== 'AND' || terms.length <= 1) return '';
+                
+                const detailCounts = type === 'book' ? bookDetailCounts[key] : (type === 'chapter' ? chapterDetailCounts[key] : verseDetailCounts[key]);
+                if (!detailCounts) return '';
+
+                const details = terms.map(term => `${term}: ${detailCounts[term] || 0}`).join(', ');
+                return ` <span class="detail-counts">(${details})</span>`;
+            };
+
+            rankHtml += `<div class="search-rank-container"><h4>Vorkommen nach Buch</h4><ul class="search-rank-list" id="rank-list-book">`;
+            // KORREKTUR: Füge Rangnummern hinzu
+            let lastBookCount = -1, bookRank = 0;
+            sortedBooks.slice(0, initialDisplayCount).forEach(([book, count], index) => {
+                if (count !== lastBookCount) { bookRank = index + 1; }
+                lastBookCount = count;
+                rankHtml += `<li data-rank="${bookRank}" data-count="${count}"><span class="rank-number">${bookRank}.</span> <a href="#" class="search-rank-link book-rank" data-book="${book}" data-search-term="${searchTermStringForLinks}" data-partial-search="${usePartialSearch}">${book}</a><span class="count">${count}</span><a class="density-link" data-type="book" data-key="${book}" data-count="${count}">(Dichte)</a></li>`;
+                rankHtml += getDetailCountHtml('book', book, searchTerm);
+            });
+            rankHtml += `</ul>${getShowMoreButton('book', sortedBooks.length)}</div>`;
+
+            rankHtml += `<div class="search-rank-container"><h4>Vorkommen nach Kapitel</h4><ul class="search-rank-list" id="rank-list-chapter">`;
+            // KORREKTUR: Füge Rangnummern hinzu
+            let lastChapterCount = -1, chapterRank = 0;
+            sortedChapters.slice(0, initialDisplayCount).forEach(([chapterRef, count], index) => {
+                if (count !== lastChapterCount) { chapterRank = index + 1; }
+                lastChapterCount = count;
+                const [book, chapter] = chapterRef.split(/ (\d+)$/);
+                rankHtml += `<li data-rank="${chapterRank}" data-count="${count}"><span class="rank-number">${chapterRank}.</span> <a href="#" class="search-rank-link" data-book="${book}" data-chapter="${chapter}" data-verse="1" data-search-term="${searchTermStringForLinks}" data-partial-search="${usePartialSearch}">${chapterRef}</a><span class="count">${count}</span><a class="density-link" data-type="chapter" data-key="${chapterRef}" data-count="${count}">(Dichte)</a></li>`;
+                rankHtml += getDetailCountHtml('chapter', chapterRef, searchTerm);
+            });
+            rankHtml += `</ul>${getShowMoreButton('chapter', sortedChapters.length)}</div>`;
+
+            // NEU: Rangliste für Verse
+            rankHtml += `<div class="search-rank-container"><h4>Vorkommen nach Vers</h4><ul class="search-rank-list" id="rank-list-verse">`;
+            // KORREKTUR: Füge Rangnummern hinzu
+            let lastVerseCount = -1, verseRank = 0;
+            sortedVerses.slice(0, initialDisplayCount).forEach(([verseRef, count], index) => {
+                if (count !== lastVerseCount) { verseRank = index + 1; }
+                lastVerseCount = count;
+                const match = verseRef.match(/^(.+?)\s(\d+),(\d+)$/);
+                if (!match) return;
+                const [_, book, chapter, verseNum] = match;
+                rankHtml += `<li data-rank="${verseRank}" data-count="${count}"><span class="rank-number">${verseRank}.</span> <a href="#" class="search-rank-link" data-book="${book}" data-chapter="${chapter}" data-verse="${verseNum}" data-search-term="${searchTermStringForLinks}" data-partial-search="${usePartialSearch}">${verseRef}</a><span class="count">${count}</span><a class="density-link" data-type="verse" data-key="${verseRef}" data-count="${count}">(Dichte)</a></li>`;
+                rankHtml += getDetailCountHtml('verse', verseRef, searchTerm);
+            });
+            rankHtml += `</ul>${getShowMoreButton('verse', sortedVerses.length)}</div>`;
+            rankHtml += '</div>'; // Ende des .search-stats-wrapper
+        }
+            const operator = searchMode === 'AND' ? ' ++ ' : ' + ';
+            const searchTermString = Array.isArray(searchTerm) ? searchTerm.join(operator) : searchTerm;
+            const headerText = bookFilter ? `Alle ${finalResults.length} Vorkommen von "${searchTermString}" im Buch ${bookFilter}` : `Suchergebnisse für "${searchTermString}" (${finalResults.length} Treffer in Versen)`;
+            verseListHtml += `<h3>${headerText}</h3>`;
+
+        if (filteredResults.length === 0) {
+            verseListHtml += "<p>Keine Treffer gefunden.</p>";
         } else {
-            // Erstelle einen regulären Ausdruck, um den Suchbegriff (case-insensitive) zu finden
-            const regex = new RegExp(`(${searchTerm})`, 'gi');
-            results.forEach(verse => {
+            // KORREKTUR: Erstelle eine kombinierte Regex zum Hervorheben aller Begriffe
+            const RESULTS_PAGE_SIZE = 66;
+
+            // Helferfunktion für Paginierung der Ergebnisliste
+            const getVerseListPaginationHtml = (offset, total) => `
+                <div class="verse-list-pagination">
+                    <button class="button" data-verse-page-offset="${Math.max(0, offset - RESULTS_PAGE_SIZE)}" ${offset === 0 ? 'disabled' : ''}>&laquo;</button>
+                    <span>Seite ${Math.floor(offset / RESULTS_PAGE_SIZE) + 1} von ${Math.ceil(total / RESULTS_PAGE_SIZE)}</span>
+                    <button class="button" data-verse-page-offset="${offset + RESULTS_PAGE_SIZE}" ${offset + RESULTS_PAGE_SIZE >= total ? 'disabled' : ''}>&raquo;</button>
+                </div>`;
+            const termsToHighlight = Array.isArray(searchTerm) ? searchTerm : [searchTerm];
+            const highlightPattern = termsToHighlight.map(term => {
+                const escaped = term.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+                return usePartialSearch ? escaped : `\\b${escaped}\\b`;
+            }).join('|');
+            const highlightRegex = new RegExp(`(${highlightPattern})`, 'gi');
+            
+            verseListHtml += getVerseListPaginationHtml(verseListOffset, finalResults.length);
+
+            finalResults.slice(verseListOffset, verseListOffset + RESULTS_PAGE_SIZE).forEach(verse => {
                 // Ersetze den Suchbegriff durch eine hervorgehobene Version
-                const highlightedText = verse.text.replace(regex, '<span class="highlight">$1</span>');
-                resultsHtml += `
-                    <div class="search-result-item" data-book="${verse.book}" data-chapter="${verse.chapter}">
-                        <span class="ref">${verse.book} ${verse.chapter},${verse.verse_num}</span>
-                        <span class="text">${highlightedText}</span>
+                const highlightedText = verse.text.replace(highlightRegex, '<span class="highlight">$1</span>');
+                verseListHtml += `
+                    <div class="search-result-item" data-book="${verse.book}" data-chapter="${verse.chapter}" data-verse="${verse.verse_num}">
+                        <a href="#" class="search-result-ref">${verse.book} ${verse.chapter},${verse.verse_num}</a>
+                        <div class="search-result-preview">${highlightedText}</div>
                     </div>
                 `;
             });
+
+            verseListHtml += getVerseListPaginationHtml(verseListOffset, finalResults.length);
         }
-        verseTextDisplay.innerHTML = resultsHtml;
-        
-        // UI-Anpassungen für die Suchergebnisansicht
-        readingNavTop.style.display = 'none';
-        readingNavBottom.style.display = 'none';
-        // document.querySelector('.quiz-input-column').style.display = 'none'; // Linke Spalte nicht mehr ausblenden
-        clearSearchButton.style.display = 'inline-block';
+
+            verseTextDisplay.innerHTML = rankHtml + verseListHtml;
+
+            // UI-Anpassungen für die Suchergebnisansicht
+            readingNavTop.style.display = 'none';
+            readingNavBottom.style.display = 'none';
+            clearSearchButton.style.display = 'inline-block';
+
+            // Temporäre Speicherung der vollständigen, sortierten Listen für "Mehr anzeigen"
+            verseTextDisplay.dataset.sortedBooks = JSON.stringify(sortedBooks);
+            verseTextDisplay.dataset.sortedChapters = JSON.stringify(sortedChapters);
+            verseTextDisplay.dataset.sortedVerses = JSON.stringify(sortedVerses);
+            verseTextDisplay.dataset.searchTerm = Array.isArray(searchTerm) ? searchTerm.join('++') : searchTerm;
+            verseTextDisplay.dataset.usePartialSearch = usePartialSearch;
+            // NEU: Speichere Detail-Counts für die alternative Sortierung
+            verseTextDisplay.dataset.bookDetailCounts = JSON.stringify(bookDetailCounts);
+            verseTextDisplay.dataset.chapterDetailCounts = JSON.stringify(chapterDetailCounts);
+            verseTextDisplay.dataset.verseDetailCounts = JSON.stringify(verseDetailCounts);
+        };
+
+        // --- 4. Entscheiden, ob der Worker genutzt wird ---
+        if (results.length > WORKER_THRESHOLD && typeof(Worker) !== "undefined" && !bookFilter) {
+            // Pfad 1: Web Worker für große Datenmengen nutzen
+            const operator = searchMode === 'AND' ? ' ++ ' : ' + ';
+            const searchTermString = Array.isArray(searchTerm) ? searchTerm.join(operator) : searchTerm;
+            verseTextDisplay.innerHTML = `<h3>Suche nach "${searchTermString}"...</h3><p>Berechne Ranglisten für ${results.length} Treffer. Dies kann einen Moment dauern...</p>`;
+
+            const worker = new Worker('search-worker.js');
+
+            worker.onmessage = function(e) {
+                const { sortedBooks, sortedChapters, sortedVerses, sortedResults, detailCounts } = e.data;
+                // NEU: Übernehme die Detail-Counts vom Worker
+                if (detailCounts) {
+                    Object.assign(bookDetailCounts, detailCounts.book);
+                    Object.assign(chapterDetailCounts, detailCounts.chapter);
+                    Object.assign(verseDetailCounts, detailCounts.verse);
+                }
+                renderResults(sortedBooks, sortedChapters, sortedVerses, sortedResults); // Rufe renderResults auf, nachdem die Detail-Counts gesetzt sind
+                worker.terminate(); // Worker nach getaner Arbeit beenden
+            };
+
+            worker.onerror = function(e) {
+                console.error(`[Web Worker] Fehler: ${e.message}`);
+                verseTextDisplay.innerHTML = `<p>Ein Fehler ist im Hintergrund-Prozess aufgetreten. Die Ergebnisse konnten nicht berechnet werden.</p>`;
+                worker.terminate();
+            };
+
+            // Daten an den Worker senden
+            worker.postMessage({ results, searchTerm, usePartialSearch, searchMode, bookChapterStructure });
+
+        } else {
+            // Pfad 2: Berechnung im Hauptthread für kleinere Datenmengen
+            const regexes = Array.isArray(searchTerm) ? searchTerm.map(term => {
+                const escapedTerm = term.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+                return usePartialSearch ? new RegExp(escapedTerm, 'gi') : new RegExp(`\\b${escapedTerm}\\b`, 'gi');
+            }) : [usePartialSearch ? new RegExp(searchTerm.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&'), 'gi') : new RegExp(`\\b${searchTerm}\\b`, 'gi')];
+
+            results.forEach(verse => {
+                const book = verse.book;
+                const chapterRef = `${book} ${verse.chapter}`;
+                const verseRef = `${chapterRef},${verse.verse_num}`;
+                const countsPerTerm = regexes.map(regex => (verse.text.match(regex) || []).length);
+                let matches;
+
+                if (searchMode === 'AND') {
+                    // KORREKTUR: Prüfe, ob *alle* Begriffe vorkommen (min > 0),
+                    // aber zähle die *Summe* für die Rangliste.
+                    if (Math.min(...countsPerTerm) > 0) {
+                        matches = countsPerTerm.reduce((total, count) => total + count, 0);
+                        searchTerm.forEach((term, index) => {
+                            bookDetailCounts[book] = bookDetailCounts[book] || {};
+                            bookDetailCounts[book][term] = (bookDetailCounts[book][term] || 0) + countsPerTerm[index];
+                            chapterDetailCounts[chapterRef] = chapterDetailCounts[chapterRef] || {};
+                            chapterDetailCounts[chapterRef][term] = (chapterDetailCounts[chapterRef][term] || 0) + countsPerTerm[index];
+                            verseDetailCounts[verseRef] = verseDetailCounts[verseRef] || {};
+                            verseDetailCounts[verseRef][term] = (verseDetailCounts[verseRef][term] || 0) + countsPerTerm[index];
+                        });
+                    } else {
+                        matches = 0;
+                    }
+                } else {
+                    matches = countsPerTerm.reduce((total, count) => total + count, 0);
+                }
+
+                if (matches > 0) {
+                    bookCounts[book] = (bookCounts[book] || 0) + matches;
+                    chapterCounts[chapterRef] = (chapterCounts[chapterRef] || 0) + matches;
+                    verseCounts[verseRef] = (verseCounts[verseRef] || 0) + matches;
+                }
+            });
+            const sortedBooks = Object.entries(bookCounts).sort((a, b) => b[1] - a[1]);
+            const sortedChapters = Object.entries(chapterCounts).sort((a, b) => b[1] - a[1]);
+            const sortedVerses = Object.entries(verseCounts).sort((a, b) => b[1] - a[1]);
+
+            // Sortiere die Ergebnisse hier im Hauptthread, da der Worker nicht genutzt wurde
+            const canonicalBookOrder = bookChapterStructure.map(b => b.book);
+            filteredResults.sort((a, b) => {
+                const bookIndexA = canonicalBookOrder.indexOf(a.book);
+                const bookIndexB = canonicalBookOrder.indexOf(b.book);
+                if (bookIndexA !== bookIndexB) return (bookIndexA === -1 ? Infinity : bookIndexA) - (bookIndexB === -1 ? Infinity : bookIndexB);
+                if (a.chapter !== b.chapter) return a.chapter - b.chapter;
+                return a.verse_num - b.verse_num;
+            });
+
+            renderResults(sortedBooks, sortedChapters, sortedVerses, filteredResults);
+        }
     }
 
+    // NEU: Funktion zur Durchführung der Lückensuche
+    function performGapSearch() {
+        const gapInputText = gapSearchInput.value.trim();
+        if (!gapInputText) {
+            alert("Bitte gib mindestens einen Begriff für die Lückensuche ein.");
+            return;
+        }
+
+        verseTextDisplay.innerHTML = `<h3>Suche nach Lücken für "${gapInputText}"...</h3><p>Dieser Vorgang kann einen Moment dauern.</p>`;
+
+        // Führe die komplexe Berechnung mit einer leichten Verzögerung aus, damit die UI aktualisiert werden kann.
+        setTimeout(() => {
+            const searchTerms = gapInputText.split('++').map(t => t.trim().toLowerCase()).filter(Boolean);
+            const usePartialSearch = partialWordSearchCheckbox.checked;
+
+            // KORREKTUR: Berücksichtige den ausgewählten Such-Bereich.
+            const versesInScope = filterPoolByScope(allVerses);
+            
+            // Schritt 1: Erstelle einen durchgehenden Text und eine Map, um Indizes zu Versen zuzuordnen.
+            // KORREKTUR: Erstelle zwei Versionen: eine für die Suche (lowercase) und eine für die Anzeige (original case).
+            let fullBibleTextLower = '';
+            let fullBibleTextOriginal = '';
+            const verseStartIndices = [];
+            versesInScope.forEach(verse => {
+                verseStartIndices.push({ verse, startIndex: fullBibleTextLower.length });
+                const verseTextWithSpace = verse.text + ' ';
+                fullBibleTextLower += verseTextWithSpace.toLowerCase();
+                fullBibleTextOriginal += verseTextWithSpace;
+            });
+
+            // Schritt 2: Finde alle Vorkommen der Suchbegriffe.
+            let matches = [];
+            searchTerms.forEach(term => {
+                const escapedTerm = term.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+                // KORREKTUR: Berücksichtige die Teilwort-Checkbox.
+                // Suche immer nach Teilwörtern, wenn die Checkbox aktiv ist ODER wenn es nur ein einzelner Buchstabe ist.
+                const pattern = (usePartialSearch || term.length === 1) ? escapedTerm : `\\b${escapedTerm}\\b`;
+                const regex = new RegExp(pattern, 'g');
+                let match;
+                while ((match = regex.exec(fullBibleTextLower)) !== null) {
+                    matches.push({ start: match.index, end: match.index + match[0].length });
+                }
+            });
+
+            // Sortiere die Indizes und entferne Duplikate.
+            matches.sort((a, b) => a.start - b.start);
+
+            // Schritt 3: Finde die Lücken zwischen den Vorkommen.
+            let gaps = [];
+            let lastIndex = 0;
+            matches.forEach(match => {
+                if (match.start > lastIndex) {
+                    gaps.push({ start: lastIndex, end: match.start, length: match.start - lastIndex });
+                }
+                lastIndex = match.end; // Setze den Start für die nächste Lücke auf das Ende des aktuellen Treffers.
+            });
+            // Füge die letzte Lücke vom letzten Vorkommen bis zum Ende des Textes hinzu.
+            if (lastIndex < fullBibleTextLower.length) {
+                gaps.push({ start: lastIndex, end: fullBibleTextLower.length, length: fullBibleTextLower.length - lastIndex });
+            }
+
+            // Schritt 4: Sortiere die Lücken nach Länge und nimm die Top 10.
+            gaps.sort((a, b) => b.length - a.length);
+            const top10Gaps = gaps.slice(0, 10);
+
+            // Schritt 5: Zeige die Ergebnisse an.
+            displayGapSearchResults(top10Gaps, fullBibleTextOriginal, verseStartIndices, gapInputText, searchTerms, usePartialSearch);
+        }, 50);
+    }
+
+    // NEU: Funktion zur Anzeige der Lückensuch-Ergebnisse
+    function displayGapSearchResults(gaps, fullText, verseMap, searchTerm, searchTerms, usePartialSearch) {
+        let html = `<h3>Die 10 längsten Abschnitte ohne "${searchTerm}"</h3>`;
+        if (gaps.length === 0) {
+            html += "<p>Keine Ergebnisse gefunden. Möglicherweise kommt der Begriff überall vor.</p>";
+            verseTextDisplay.innerHTML = html;
+            return;
+        }
+
+        // Erstelle eine Regex, um die Kontext-Begriffe hervorzuheben
+        const contextHighlightPattern = searchTerms.map(term => {
+            const escaped = term.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+            // Nutze dieselbe Logik wie bei der Suche
+            return (usePartialSearch || term.length === 1) ? escaped : `\\b${escaped}\\b`;
+        }).join('|');
+        const contextHighlightRegex = new RegExp(`(${contextHighlightPattern})`, 'gi');
+
+        // Hilfsfunktion, um einen Index im Gesamttext einer Bibelstelle zuzuordnen.
+        const findVerseForIndex = (index) => {
+            // Finde den letzten Vers, der vor oder an diesem Index beginnt.
+            for (let i = verseMap.length - 1; i >= 0; i--) {
+                if (verseMap[i].startIndex <= index) {
+                    return verseMap[i].verse;
+                }
+            }
+            return verseMap[0].verse; // Fallback
+        };
+
+        html += '<ol class="gap-search-results">';
+        gaps.forEach(gap => {
+            // KORREKTUR: Die Logik wurde komplett überarbeitet, um die Anzeige zu korrigieren.
+            const startVerseInfo = verseMap.find(v => v.startIndex <= gap.start && (v.startIndex + v.verse.text.length + 1) > gap.start);
+            const endVerseInfo = verseMap.find(v => v.startIndex <= gap.end && (v.startIndex + v.verse.text.length + 1) > gap.end);
+
+            if (!startVerseInfo || !endVerseInfo) return;
+
+            const startVerse = startVerseInfo.verse;
+            const endVerse = endVerseInfo.verse;
+
+            // 1. Extrahiere den gesamten Textblock vom Anfang des Start-Verses bis zum Ende des End-Verses.
+            const blockStartIndex = startVerseInfo.startIndex;
+            const blockEndIndex = endVerseInfo.startIndex + endVerseInfo.verse.text.length;
+            const fullBlockText = fullText.substring(blockStartIndex, blockEndIndex);
+
+            // 2. Berechne die relativen Positionen der Lücke innerhalb dieses Blocks.
+            const relativeGapStart = gap.start - blockStartIndex;
+            const relativeGapEnd = gap.end - blockStartIndex;
+
+            // 3. Teile den Block in drei Teile: Kontext davor, Lücke, Kontext danach.
+            const beforeGapText = fullBlockText.substring(0, relativeGapStart);
+            const gapText = fullBlockText.substring(relativeGapStart, relativeGapEnd);
+            const afterGapText = fullBlockText.substring(relativeGapEnd);
+
+            let displayText;
+            const maxLength = 20000;
+            const previewChunk = 10000;
+
+            if (gapText.length < maxLength) {
+                displayText = `${beforeGapText}<span class="gap-underline highlight-context">${gapText}</span>${afterGapText}`;
+            } else {
+                const startPart = gapText.substring(0, previewChunk);
+                const endPart = gapText.substring(gapText.length - previewChunk);
+                displayText = `${beforeGapText}<span class="gap-underline highlight-context">${startPart}</span>...<span class="gap-underline highlight-context">${endPart}</span>${afterGapText}`;
+            }
+
+            const startRef = `${startVerse.book} ${startVerse.chapter},${startVerse.verse_num}`;
+            const endRef = `${endVerse.book} ${endVerse.chapter},${endVerse.verse_num}`;
+
+            html += `<li><strong>Von ${startRef} bis ${endRef}</strong> (Länge: ${gap.length.toLocaleString('de-DE')} Zeichen)
+                         <p class="gap-preview">${displayText}</p>
+                     </li>`;
+        });
+        html += '</ol>';
+
+        verseTextDisplay.innerHTML = html;
+    }
 
     function makeGuess() {
         // Im Multiplayer-Modus wird der geheime Vers nicht auf dem Client gespeichert.
@@ -808,7 +1401,8 @@ document.addEventListener('mainScriptReady', async () => {
                 statsDisplay.textContent = `Entfernung: ${distance} Verse. Punkte: ${points}.`;
                 drawFeedback(guessedVerse, actualVerse); 
                 showContextView(actualVerse.book, actualVerse.chapter, actualVerse.verse_num);
-
+                // KORREKTUR: Setze den globalen Kontext für den "Kontext anzeigen"-Button
+                currentContext = { book: actualVerse.book, chapter: actualVerse.chapter };
             } else if (quizMode === 'guessChapter') {
                 // Auswertungslogik für den Kapitel-Modus
                 const guessedInfo = allVerses.find(v => v.id === guessedId); // Wir brauchen den Vers für Buch/Kapitel
@@ -825,25 +1419,40 @@ document.addEventListener('mainScriptReady', async () => {
                     points = 100;
                     feedbackText = "Perfekt! 100 Punkte.";
                 } else {
-                    const bookIsCorrect = guessedInfo.book === actual.book;
-                    if (bookIsCorrect && !customScope.active) {
-                        points += 40; // Basispunkte für das richtige Buch
-                    }
+                    // NEUE LOGIK V4: Nähe + Bonus, dann Multiplikator und Aufrunden
+                    const actualVerse = allVerses.find(v => v.book === actual.book && v.chapter === actual.chapter);
+                    const distance = Math.abs(actualVerse.id - guessedInfo.id);
+                    const totalVerses = allVerses.length;
+                    const percentageError = distance / totalVerses;
 
-                    if (bookIsCorrect) {
-                        const chapterDistance = Math.abs(guessedInfo.chapter - actual.chapter);
-                        const maxDistance = bookChapterStructure.find(b => b.book === actual.book).chapters.length;
-                        // Punkte basierend auf der Nähe, max. 50
-                        let proximityPoints = Math.round(50 * (1 - (chapterDistance / maxDistance)));
-                        if (proximityPoints < 0) proximityPoints = 0;
-                        points += proximityPoints;
+                    // Schritt 1: Basispunkte für die Nähe (max. 50)
+                    let proximityPoints = Math.round(50 * (1 - Math.sqrt(percentageError)));
+                    if (proximityPoints < 0) proximityPoints = 0;
+                    points = proximityPoints;
+
+                    // Schritt 2: Bonuspunkte für Kontext (wenn kein benutzerdefinierter Bereich aktiv ist)
+                    const testamentIsCorrect = guessedInfo.testament === actualVerse.testament;
+                    const bookIsCorrect = guessedInfo.book === actual.book;
+
+                    if (!customScope.active) {
+                        if (testamentIsCorrect) {
+                            points += 10; // +10 Punkte für das richtige Testament
+                        }
+                        if (bookIsCorrect) {
+                            points += 20; // +20 Punkte für das richtige Buch
+                        }
                     }
+                    // Schritt 3: Multiplikator anwenden und aufrunden
+                    points = Math.ceil(points * (5 / 4));
+
                     feedbackText = `Dein Tipp: ${guessedInfo.book} ${guessedInfo.chapter}. Punkte: ${Math.round(points)}.`;
+                    if (points > 99) points = 99; // Maximal 99 Punkte für einen Fast-Treffer
                 }
                 statsDisplay.textContent = feedbackText;
                 
                 // Zeige den Kontext des richtigen Kapitels an
-                showContextView(actual.book, actual.chapter);
+                // KORREKTUR: Setze nur den globalen Kontext, anstatt ihn sofort anzuzeigen.
+                currentContext = { book: actual.book, chapter: actual.chapter };
                 // Im Kapitel-Modus gibt es keine Visualisierung auf der Zeitleiste.
                 clearCanvas();
             } else if (quizMode === 'guessSummary') {
@@ -862,22 +1471,38 @@ document.addEventListener('mainScriptReady', async () => {
                     points = 100;
                     feedbackText = "Perfekt! 100 Punkte.";
                 } else {
-                    const bookIsCorrect = guessedInfo.book === actual.book;
-                    if (bookIsCorrect && !customScope.active) {
-                        points += 40; // Basispunkte für das richtige Buch
-                    }
+                    // NEUE LOGIK V4: Nähe + Bonus, dann Multiplikator und Aufrunden (identisch zu 'guessChapter')
+                    const actualVerse = allVerses.find(v => v.book === actual.book && v.chapter === actual.chapter);
+                    const distance = Math.abs(actualVerse.id - guessedInfo.id);
+                    const totalVerses = allVerses.length;
+                    const percentageError = distance / totalVerses;
 
-                    if (bookIsCorrect) {
-                        const chapterDistance = Math.abs(guessedInfo.chapter - actual.chapter);
-                        const maxDistance = bookChapterStructure.find(b => b.book === actual.book).chapters.length;
-                        let proximityPoints = Math.round(50 * (1 - (chapterDistance / maxDistance)));
-                        if (proximityPoints < 0) proximityPoints = 0;
-                        points += proximityPoints;
+                    // Schritt 1: Basispunkte für die Nähe (max. 50)
+                    let proximityPoints = Math.round(50 * (1 - Math.sqrt(percentageError)));
+                    if (proximityPoints < 0) proximityPoints = 0;
+                    points = proximityPoints;
+
+                    // Schritt 2: Bonuspunkte für Kontext (wenn kein benutzerdefinierter Bereich aktiv ist)
+                    const testamentIsCorrect = guessedInfo.testament === actualVerse.testament;
+                    const bookIsCorrect = guessedInfo.book === actual.book;
+
+                    if (!customScope.active) {
+                        if (testamentIsCorrect) {
+                            points += 10; // +10 Punkte für das richtige Testament
+                        }
+                        if (bookIsCorrect) {
+                            points += 20; // +20 Punkte für das richtige Buch
+                        }
                     }
+                    // Schritt 3: Multiplikator anwenden und aufrunden
+                    points = Math.ceil(points * (5 / 4));
+
                     feedbackText = `Dein Tipp: ${guessedInfo.book} ${guessedInfo.chapter}. Punkte: ${Math.round(points)}.`;
+                    if (points > 99) points = 99; // Maximal 99 Punkte für einen Fast-Treffer
                 }
                 statsDisplay.textContent = feedbackText;
-                showContextView(actual.book, actual.chapter);
+                // KORREKTUR: Setze nur den globalen Kontext, anstatt ihn sofort anzuzeigen.
+                currentContext = { book: actual.book, chapter: actual.chapter };
                 clearCanvas();
             } else if (quizMode === 'multipleChoice') {
                 // Im Multiple-Choice-Modus wird die Auswertung über handleMcOptionClick gehandhabt.
@@ -912,6 +1537,8 @@ document.addEventListener('mainScriptReady', async () => {
             // Die Auflösung wird jetzt direkt in der Feedback-Nachricht angezeigt.
             // statsDisplay.textContent = currentMcQuestion.aufloesung;
             guessButton.disabled = true; // Deaktiviert den "Tipp abgeben" Button, falls er sichtbar wäre
+            // KORREKTUR: Setze den globalen Kontext, damit er nach der Antwort angezeigt werden kann.
+            currentContext = { book: currentMcQuestion.book, chapter: currentMcQuestion.chapter };
         }
     }
     
@@ -1113,10 +1740,10 @@ document.addEventListener('mainScriptReady', async () => {
     // --- UI-Update-Funktionen ---
     function updateBookDropdown() {
         if (DEBUG_SYNC) console.log('[SyncDebug] updateBookDropdown called.');
-        // NEU: Im Lese-Modus wird das Dropdown nicht durch das Testament eingeschränkt
-        if (quizMode === 'readMode') {
-            return; // Die Buchliste ist bereits vollständig
-        }
+        // KORREKTUR: Entferne die Bedingung, die das Filtern im Lesemodus verhindert hat.
+        // Das Buch-Dropdown sollte IMMER nach dem ausgewählten Testament gefiltert werden,
+        // wenn der Testament-Schalter aktiv ist.
+        // Die Initialisierung des Lesemodus wird nun in setQuizModeUI angepasst.
         const selectedTestament = document.querySelector('input[name="testament"]:checked').value;
         const books = [...new Set(allVerses.filter(v => v.testament === selectedTestament).map(v => v.book))];
         const canonicalOrder = [...new Set(allVerses.map(v => v.book))];
@@ -1255,6 +1882,12 @@ document.addEventListener('mainScriptReady', async () => {
             if (verseSelect.value != verse.verse_num) {
                 verseSelect.value = verse.verse_num;
             }
+
+            // NEU: Wenn im Lesemodus, aktualisiere die Ansicht
+            if (quizMode === 'readMode') {
+                // Rufe die Anzeige mit dem neuen Buch und Kapitel auf
+                displayReadingChapter(verse.book, verse.chapter);
+            }
         }
         // KORREKTUR: Synchronisiere die Detail-Slider mit den neuen Dropdown-Werten
         bookSlider.value = bookSelect.selectedIndex;
@@ -1314,55 +1947,60 @@ document.addEventListener('mainScriptReady', async () => {
         const isQuizActive = mode !== 'readMode';
 
         // NEU: Passe die Breite der Hauptansicht an
-        bibleQuizView.style.maxWidth = '1200px'; // Immer breiter für den Lesemodus
-
-        // NEU: Passe die Spaltenbreite je nach Modus an
-        const displayColumn = document.getElementById('verse-display-section');
-        if (!isQuizActive) { // Lese-Modus
-            quizInputColumn.style.flex = '1 1 350px'; // Linke Spalte schmaler
-            displayColumn.style.flex = '3 1 0';      // Rechte Spalte (Lesebereich) breiter
-        } else { // Quiz-Modus
-            quizInputColumn.style.flex = ''; // Setzt auf CSS-Standard zurück (1)
-            displayColumn.style.flex = '';   // Setzt auf CSS-Standard zurück (2)
-        }
+        bibleQuizView.style.maxWidth = (mode === 'multipleChoice') ? '800px' : '1200px';
 
         // Quiz-spezifische Elemente
-        quizInputColumn.style.display = 'flex'; // Immer sichtbar
-        document.getElementById('guess-controls').style.display = isQuizActive ? 'block' : 'none';
-        document.getElementById('guess-button').style.display = isQuizActive ? 'inline-block' : 'none';
-        document.getElementById('new-verse-button').style.display = isQuizActive ? 'inline-block' : 'none';
-        document.getElementById('feedback-section').style.display = isQuizActive ? 'block' : 'none';
+        const isMcMode = mode === 'multipleChoice';
+        const isSequentialMc = isMcMode && document.querySelector('input[name="mc-order"]:checked').value === 'sequential';
+        // KORREKTUR: Die Eingabespalte (quizInputColumn) soll IMMER sichtbar sein, sowohl im Quiz- als auch im Lesemodus.
+        quizInputColumn.style.display = 'flex';
+
+        taskSliderContainer.style.display = (currentSeedString || isSequentialMc) ? 'block' : 'none';
+        seedContainer.style.display = isQuizActive ? 'block' : 'none'; // KORREKTUR: Seed-Input anzeigen
+
+        mcQuestionCounters.style.display = 'none'; // Standardmäßig ausblenden
         mcOptionsContainer.style.display = (mode === 'multipleChoice') ? 'flex' : 'none';
-        mcQuizOptions.style.display = (mode === 'multipleChoice') ? 'block' : 'none';
-        document.getElementById('show-context-button').style.display = isQuizActive ? 'inline-block' : 'none';
+        mcQuizOptions.style.display = isMcMode ? 'block' : 'none';
+        document.getElementById('show-context-button').style.display = isQuizActive ? 'inline-block' : 'none'; // KORREKTUR: Vereinfacht
         document.getElementById('verse-display-legend').textContent = isQuizActive ? 'Zu erratende Aufgabe' : 'Lese-Ansicht';
 
         // Lese-Modus-spezifische Elemente
         readingOptionsContainer.style.display = isQuizActive ? 'none' : 'block';
         summaryPositionOptions.style.display = (isQuizActive || !showSummariesCheckbox.checked) ? 'none' : 'block';
-        readingNavTop.style.display = isQuizActive ? 'none' : 'block';
-        readingNavBottom.style.display = isQuizActive ? 'none' : 'block';
+        // KORREKTUR: Bereichsauswahl für Suche nur im Lesemodus anzeigen
+        searchScopeContainer.style.display = isQuizActive ? 'none' : 'block';
+        gapSearchContainer.style.display = isQuizActive ? 'none' : 'block'; // NEU: Lückensuche im Lesemodus anzeigen
+        readingNavTop.style.display = isQuizActive ? 'none' : 'block'; // KORREKTUR: Logik für Navigationsleisten vereinfacht
+        readingNavBottom.style.display = isQuizActive ? 'none' : 'block'; // KORREKTUR: Logik für Navigationsleisten vereinfacht
+        // KORREKTUR: Navigationsleiste anzeigen, wenn ein Seed aktiv ist ODER wenn der MC-Modus sequenziell ist.
 
-        if (isQuizActive) {
-            const isVerseMode = (mode === 'guessVerse');
-            const isChapterOrSummaryMode = (mode === 'guessChapter' || mode === 'guessSummary');
-            document.getElementById('verse-select-container').style.display = isVerseMode ? 'block' : 'none';
-            document.getElementById('verse-slider-wrapper').style.display = isVerseMode ? 'block' : 'none';
-            document.getElementById('position-controls').style.display = (mode === 'multipleChoice') ? 'none' : 'block';
+        if (isQuizActive) { // Alle Quiz-Modi
+            document.getElementById('guess-button').style.display = 'inline-block';
+            document.getElementById('feedback-section').style.display = 'block';
+            // "Nächste Runde"-Button nur anzeigen, wenn die Reihenfolge nicht deterministisch ist (kein Seed, kein sequenzieller MC).
+            document.getElementById('new-verse-button').style.display = (!currentSeedString && !isSequentialMc) ? 'inline-block' : 'none';
+            seededNavContainer.style.display = (currentSeedString || isSequentialMc) ? 'flex' : 'none';
+
+            scopeSelectionContainer.style.display = 'block'; // KORREKTUR: Bereichsauswahl immer im Quiz-Modus anzeigen.
+            document.getElementById('position-controls').style.display = 'block';
             document.getElementById('guess-controls').style.display = (mode === 'multipleChoice') ? 'none' : 'block';
 
             updateBookDropdown();
-            // Setze den MC-Fragen-Zustand zurück, wenn der Modus gewechselt wird
+            rebuildSeededQueue();
             mcQuestionQueue = [];
         } else {
-            // Setup für den Lese-Modus
-            // Verstecke die Vers-spezifischen Bedienelemente
-            document.getElementById('verse-select-container').style.display = 'none';
-            document.getElementById('verse-slider-wrapper').style.display = 'none';
-            document.getElementById('position-controls').style.display = 'none';
-            populateSelect(bookSelect, bookChapterStructure.map(b => b.book), "Buch");
-            updateChapterDropdown();
-            displayReadingChapter();
+            // Setup für den Lese-Modus (readMode)
+            document.getElementById('guess-button').style.display = 'none';
+            document.getElementById('feedback-section').style.display = 'none';
+            document.getElementById('new-verse-button').style.display = 'none';
+            seededNavContainer.style.display = 'none';
+            scopeSelectionContainer.style.display = 'none'; // Verstecke die Quiz-Bereichsauswahl
+            document.getElementById('position-controls').style.display = 'block';
+            document.getElementById('guess-controls').style.display = 'block';
+            // KORREKTUR: Statt alle Bücher zu laden, aktualisiere das Buch-Dropdown basierend auf dem aktuellen Testament.
+            // Dies stellt sicher, dass der Testament-Filter auch im Lesemodus korrekt angewendet wird.
+            updateBookDropdown(); 
+            displayReadingChapter(bookSelect.value, chapterSelect.value); // KORREKTUR: Explizite Übergabe der Werte
         }
     }
 
@@ -1398,10 +2036,36 @@ document.addEventListener('mainScriptReady', async () => {
     }
 
     function selectScopeBooks(groupName) {
-        const booksToSelect = BOOK_GROUPS[groupName] || [];
-        const allCheckboxes = scopeBookList.querySelectorAll('input[type="checkbox"]');
-        allCheckboxes.forEach(cb => {
-            cb.checked = booksToSelect.includes(cb.value);
+        const booksInGroup = BOOK_GROUPS[groupName] || [];
+        if (booksInGroup.length === 0) return;
+
+        const allBookCheckboxes = scopeBookList.querySelectorAll('.scope-book-header input[type="checkbox"]');
+        const groupCheckboxes = Array.from(allBookCheckboxes).filter(cb => booksInGroup.includes(cb.value));
+
+        // KORREKTUR: Prüfe, ob alle Bücher der Gruppe bereits ausgewählt sind.
+        const areAllSelected = groupCheckboxes.length > 0 && groupCheckboxes.every(cb => cb.checked);
+
+        // KORREKTUR: Setze den Zustand für alle Checkboxen der Gruppe auf den entgegengesetzten Wert.
+        // Wenn alle ausgewählt waren, werden sie abgewählt. Wenn nicht, werden sie ausgewählt.
+        groupCheckboxes.forEach(cb => {
+            cb.checked = !areAllSelected;
+        });
+
+        // KORREKTUR: Aktualisiere den visuellen Zustand der Sammelbuttons.
+        updateScopeGroupButtonsState(); // Stelle sicher, dass die Button-Farben sofort aktualisiert werden.
+    }
+
+    // NEU: Funktion zur Aktualisierung des visuellen Zustands der Sammelbuttons
+    function updateScopeGroupButtonsState() {
+        const selectedBooks = Array.from(scopeBookList.querySelectorAll('.scope-book-header input[type="checkbox"]:checked')).map(cb => cb.value);
+        const groupButtons = document.querySelectorAll('#scope-filter-buttons button[data-group]');
+
+        groupButtons.forEach(button => {
+            const groupName = button.dataset.group;
+            const booksInGroup = BOOK_GROUPS[groupName] || [];
+            // Prüfe, ob ALLE Bücher der Gruppe in der aktuellen Auswahl enthalten sind.
+            const isGroupActive = booksInGroup.length > 0 && booksInGroup.every(book => selectedBooks.includes(book));
+            button.classList.toggle('active', isGroupActive);
         });
     }
 
@@ -1425,7 +2089,7 @@ document.addEventListener('mainScriptReady', async () => {
         return listDiv;
     }
 
-    function applyCustomScope() {
+    function applyCustomScope(isSearchScope) {
         const selectedCheckboxes = scopeBookList.querySelectorAll('input[type="checkbox"]:checked');
         const selectedBooks = Array.from(selectedCheckboxes)
             .filter(cb => !cb.classList.contains('chapter-checkbox')) // Nur Buch-Checkboxes
@@ -1437,23 +2101,30 @@ document.addEventListener('mainScriptReady', async () => {
             customScope.chapters[book] = Array.from(chapterCheckboxes).map(cb => parseInt(cb.value, 10));
         });
 
+        const buttonToUpdate = isSearchScope ? openSearchScopeModalButton : openScopeModalButton;
+        const scopePrefix = isSearchScope ? 'Such-Bereich:' : 'Quiz-Bereich:';
+
         if (selectedBooks.length > 0) {
             customScope.active = true;
             customScope.books = Object.keys(customScope.chapters); // Aktualisiere die Buchliste
-            openScopeModalButton.classList.add('active');
-            openScopeModalButton.textContent = `Bereich aktiv (${selectedBooks.length} Bücher)`;
+            buttonToUpdate.classList.add('active');
+            buttonToUpdate.textContent = `${scopePrefix} aktiv (${selectedBooks.length} Bücher)`;
         } else {
             customScope.active = false;
             customScope.books = [];
             customScope.chapters = {};
-            openScopeModalButton.classList.remove('active');
-            openScopeModalButton.textContent = 'Bereich auswählen';
+            buttonToUpdate.classList.remove('active');
+            buttonToUpdate.textContent = isSearchScope ? 'Bereich auswählen' : 'Quiz-Bereich: Bereich auswählen';
         }
         console.log('[Bereichsauswahl] Neuer Bereich angewendet:', customScope);
         scopeModal.style.display = 'none';
-        startNewRound();
-    }
 
+        // Starte nur dann eine neue Runde, wenn es sich um den Quiz-Scope handelt.
+        if (!isSearchScope) {
+            startNewRound();
+        }
+    }
+    
     // Event-Listener für die Bereichsauswahl
     openScopeModalButton.addEventListener('click', () => {
         scopeModal.style.display = 'block';
@@ -1471,8 +2142,24 @@ document.addEventListener('mainScriptReady', async () => {
             cb.checked = customScope.chapters[book]?.includes(chapter) ?? false;
         });
     });
+    // NEU: Event-Listener für die Such-Bereichsauswahl
+    openSearchScopeModalButton.addEventListener('click', () => {
+        scopeModal.style.display = 'block';
+        // Setze Haken basierend auf dem aktuellen Scope
+        const allBookCheckboxes = scopeBookList.querySelectorAll('.scope-book-header input[type="checkbox"]');
+        allBookCheckboxes.forEach(cb => cb.checked = customScope.books.includes(cb.value));
+        const allChapterCheckboxes = scopeBookList.querySelectorAll('.chapter-checkbox');
+        allChapterCheckboxes.forEach(cb => {
+            const book = cb.dataset.book;
+            const chapter = parseInt(cb.value, 10);
+            cb.checked = customScope.chapters[book]?.includes(chapter) ?? false;
+        });
+    });
     closeScopeModalButton.addEventListener('click', () => scopeModal.style.display = 'none');
-    applyScopeButton.addEventListener('click', applyCustomScope);
+    applyScopeButton.addEventListener('click', () => {
+        const isSearchVisible = searchScopeContainer.style.display === 'block';
+        applyCustomScope(isSearchVisible);
+    });
     scopeBookList.addEventListener('click', (e) => {
         if (e.target.classList.contains('chapter-toggle-button')) {
             const bookName = e.target.dataset.book;
@@ -1480,6 +2167,11 @@ document.addEventListener('mainScriptReady', async () => {
             const isVisible = chapterList.style.display === 'block';
             chapterList.style.display = isVisible ? 'none' : 'block';
             e.target.classList.toggle('open', !isVisible);
+        }
+        // KORREKTUR: Wenn eine einzelne Buch-Checkbox geändert wird, aktualisiere die Sammelbuttons.
+        const checkbox = e.target.closest('.scope-book-header input[type="checkbox"]');
+        if (checkbox) {
+            updateScopeGroupButtonsState();
         }
     });
     document.getElementById('scope-filter-buttons').addEventListener('click', (e) => {
@@ -1490,30 +2182,114 @@ document.addEventListener('mainScriptReady', async () => {
         } else if (e.target.id === 'scope-deselect-all') {
             scopeBookList.querySelectorAll('input[type="checkbox"]').forEach(cb => cb.checked = false);
         }
+        updateScopeGroupButtonsState(); // KORREKTUR: Nach jeder Aktion den Zustand der Buttons aktualisieren.
     });
+
+    // NEU: Funktion zum (Neu-)Aufbau der Seed-Queue
+    function rebuildSeededQueue() {
+        // KORREKTUR: Vereinfacht. Die UI-Logik wird jetzt zentral von setQuizModeUI gesteuert.
+        // Diese Funktion ist nur noch für den Aufbau der Daten-Queue zuständig.
+        if (!currentSeedString && !(quizMode === 'multipleChoice' && document.querySelector('input[name="mc-order"]:checked').value === 'sequential')) {
+            seededQueue = [];
+            return;
+        }
+
+        let pool;
+        if (quizMode === 'guessVerse') pool = allVerses;
+        else if (quizMode === 'guessChapter') pool = allHeadings;
+        else if (quizMode === 'guessSummary') pool = allSummaries;
+        else if (quizMode === 'multipleChoice') {
+            // Für MC müssen wir die Fragen erst aus dem Objekt in ein Array umwandeln
+            pool = [];
+            for (const book in allMcQuestions) {
+                for (const chapter in allMcQuestions[book]) {
+                    allMcQuestions[book][chapter].forEach(q => {
+                        pool.push({ ...q, book, chapter: parseInt(chapter, 10) });
+                    });
+                }
+            }
+        } else {
+            pool = [];
+        }
+
+        const filteredPool = filterPoolByScope(pool);
+
+        // KORREKTUR: Berücksichtige die MC-Sortierreihenfolge, bevor gemischt wird.
+        const mcOrderMode = document.querySelector('input[name="mc-order"]:checked').value;
+
+        // KORREKTUR: Wenn ein Seed aktiv ist, wird IMMER gemischt, um die deterministische Zufallsreihenfolge zu erhalten.
+        // Nur wenn KEIN Seed aktiv ist UND der Modus "sequenziell" ist, wird kanonisch sortiert.
+        if (quizMode === 'multipleChoice' && mcOrderMode === 'sequential' && !currentSeedString) {
+            // Sortiere den Pool kanonisch (1. Mose -> Offb), da kein Seed aktiv ist.
+            const canonicalBookOrder = bookChapterStructure.map(b => b.book);
+            filteredPool.sort((a, b) => {
+                const bookIndexA = canonicalBookOrder.indexOf(a.book);
+                const bookIndexB = canonicalBookOrder.indexOf(b.book);
+                if (bookIndexA !== bookIndexB) {
+                    return (bookIndexA === -1 ? Infinity : bookIndexA) - (bookIndexB === -1 ? Infinity : bookIndexB);
+                }
+                if (a.chapter !== b.chapter) {
+                    return a.chapter - b.chapter;
+                }
+                // Wenn Fragen eine eigene ID oder einen Index haben, hier weiter sortieren.
+                // Ansonsten ist die Reihenfolge innerhalb eines Kapitels nicht garantiert.
+                return 0;
+            });
+            seededQueue = filteredPool;
+        } else {
+            // Für alle anderen Modi, oder wenn MC-Zufall gewählt ist, oder wenn ein Seed aktiv ist, mische den Pool.
+            // KORREKTUR: Stelle sicher, dass der *gefilterte* Pool gemischt wird, nicht der ursprüngliche.
+            const tempGenerator = mulberry32(cyrb128(currentSeedString));
+            for (let i = filteredPool.length - 1; i > 0; i--) {
+                const j = Math.floor(tempGenerator() * (i + 1));
+                [filteredPool[i], filteredPool[j]] = [filteredPool[j], filteredPool[i]];
+            }
+            seededQueue = filteredPool;
+        }
+
+        seededQueueIndex = -1; // Wird in startNewRound auf 0 gesetzt
+    }
 
     // NEU: Event-Listener für das Seed-Eingabefeld
     function updateSeed() {
         const seedStr = seedInput.value.trim();
         currentSeedString = seedStr;
-
-        if (seedStr) {
-            const seed = cyrb128(seedStr);
-            randomGenerator = mulberry32(seed);
-            console.log(`[Seed] Pseudozufallsgenerator initialisiert mit Seed: "${seedStr}" (Hash: ${seed})`);
-            clearSeedButton.style.display = 'inline-block';
-        } else {
-            randomGenerator = Math.random; // Zurück zum Standard-Zufallsgenerator
-            console.log('[Seed] Seed entfernt. Standard-Zufallsgenerator (Math.random) wird verwendet.');
-            clearSeedButton.style.display = 'none';
-        }
-        // Starte eine neue Runde, damit der neue Seed sofort wirksam wird
-        startNewRound();
+        rebuildAndStartFromSeed();
     }
     seedInput.addEventListener('change', updateSeed);
     clearSeedButton.addEventListener('click', () => {
         seedInput.value = '';
         updateSeed();
+    });
+
+    // NEU: Hilfsfunktion, um den Seed-Generator neu zu erstellen und eine neue Runde zu starten
+    function rebuildAndStartFromSeed() {
+        if (currentSeedString) {
+            const seed = cyrb128(currentSeedString);
+            randomGenerator = mulberry32(seed);
+            console.log(`[Seed] Pseudozufallsgenerator initialisiert mit Seed: "${currentSeedString}" (Hash: ${seed})`);
+            clearSeedButton.style.display = 'inline-block';
+            seededNavContainer.style.display = 'flex';
+        } else {
+            randomGenerator = Math.random; // Zurück zum Standard-Zufallsgenerator
+            console.log('[Seed] Seed entfernt. Standard-Zufallsgenerator (Math.random) wird verwendet.');
+            clearSeedButton.style.display = 'none'; // UI wird von setQuizModeUI gesteuert
+        }
+        rebuildSeededQueue();
+        // Starte die erste Aufgabe (Index 0) aus der neuen Queue
+        displayTaskFromSeededQueue(0); 
+    }
+
+    // NEU: Event-Listener für den Aufgaben-Slider
+    taskSlider.addEventListener('input', () => {
+        const index = parseInt(taskSlider.value, 10) - 1;
+        if (quizMode === 'multipleChoice' && document.querySelector('input[name="mc-order"]:checked').value === 'sequential' && !currentSeedString) {
+            // KORREKTUR: Setze den Index und zeige die spezifische Frage an, anstatt die Sequenz neu zu starten.
+            mcCurrentIndex = index; // Setzt den Index für den nächsten Klick auf "Nächste Runde"
+            displayMcQuestionContent(mcQuestionQueue[index]);
+        } else if (currentSeedString) {
+            displayTaskFromSeededQueue(index);
+        }
     });
 
     // NEU: Event-Listener und Funktion für das Seed-Erklärungs-Modal
@@ -1572,10 +2348,10 @@ document.addEventListener('mainScriptReady', async () => {
     summaryPositionOptions.addEventListener('change', () => {
         displayReadingChapter(currentContext.book, currentContext.chapter);
     });
-    searchButton.addEventListener('click', performSearch);
+    searchButton.addEventListener('click', () => performSearch({ isPagination: false }));
     searchInput.addEventListener('keyup', (e) => {
         if (e.key === 'Enter') {
-            performSearch();
+            performSearch({ isPagination: false });
         }
     });
     clearSearchButton.addEventListener('click', () => {
@@ -1592,6 +2368,14 @@ document.addEventListener('mainScriptReady', async () => {
         }
     });
 
+    // NEU: Event-Listener für die Lückensuche
+    gapSearchButton.addEventListener('click', performGapSearch);
+    gapSearchInput.addEventListener('keyup', (e) => {
+        if (e.key === 'Enter') {
+            performGapSearch();
+        }
+    });
+
     randomChapterButton.addEventListener('click', () => {
         // NEU: Berücksichtige den Scope
         const availableBooks = customScope.active ? bookChapterStructure.filter(b => customScope.books.includes(b.book)) : bookChapterStructure;
@@ -1602,12 +2386,32 @@ document.addEventListener('mainScriptReady', async () => {
             ? customScope.chapters[randomBook.book]
             : randomBook.chapters;
         const randomChapter = availableChapters[Math.floor(randomGenerator() * availableChapters.length)];
-        displayReadingChapter(randomBook.book, randomChapter);
+        
+        // KORREKTUR (FINAL V2): Die Reihenfolge und das Timing der UI-Updates sind kritisch.
+        // Wir müssen sicherstellen, dass die Dropdowns den korrekten Inhalt haben, BEVOR die Slider synchronisiert werden.
+        isUpdating = true;
+        try {
+            // Schritt 1: Setze den AT/NT-Schalter. Sein 'change'-Event wird durch isUpdating blockiert.
+            document.querySelector(`input[name="testament"][value="${randomBook.testament}"]`).checked = true;
+            
+            // Schritt 2: Erzwinge das Neuladen des Buch-Dropdowns, auch im Lesemodus.
+            // Wir umgehen die `if (quizMode === 'readMode')` Bedingung, indem wir den Modus kurz ändern.
+            const originalQuizMode = quizMode;
+            if (quizMode === 'readMode') quizMode = 'guessVerse'; // Temporär ändern
+            updateBookDropdown(); // Wird jetzt IMMER filtern, da die Bedingung entfernt wurde.
+            if (quizMode !== originalQuizMode) quizMode = originalQuizMode; // Zurücksetzen
+            // Schritt 3: Setze die Dropdown-Werte auf das zufällige Buch und Kapitel.
+            bookSelect.value = randomBook.book;
+            updateChapterDropdown();
+            chapterSelect.value = randomChapter;
+            updateVerseDropdown();
+        } finally {
+            isUpdating = false;
+        }
 
-        // Synchronisiere die Dropdowns
-        bookSelect.value = randomBook.book;
-        updateChapterDropdown();
-        chapterSelect.value = randomChapter;
+        // Schritt 4: Rufe die Anzeigefunktion auf, NACHDEM isUpdating wieder false ist.
+        // Sie zeigt den Text an und synchronisiert die Slider basierend auf den jetzt korrekten Dropdown-Werten und Indizes.
+        displayReadingChapter(randomBook.book, randomChapter);
     });
 
     // NEU: Funktion zum Parsen und Anzeigen einer Bibelstellen-Referenz
@@ -1654,10 +2458,338 @@ document.addEventListener('mainScriptReady', async () => {
 
         // NEU: Klick auf ein Suchergebnis
         const searchItem = e.target.closest('.search-result-item');
-        if (searchItem) {
-            displayReadingChapter(searchItem.dataset.book, searchItem.dataset.chapter);
+        const searchRefLink = e.target.closest('.search-result-ref');
+        if (searchRefLink) {
+            e.preventDefault();
+            const item = searchRefLink.closest('.search-result-item');
+            toggleSearchResultDetail(item);
+        }
+        const contextButton = e.target.closest('.read-in-context-button');
+        if (contextButton) {
+            e.preventDefault();
+            const book = contextButton.dataset.book;
+            const chapter = contextButton.dataset.chapter;
+            const verse = contextButton.dataset.verse;
+            displayReadingChapter(book, chapter, { highlightTerm: verseTextDisplay.dataset.searchTerm.split('++'), usePartialSearch: verseTextDisplay.dataset.usePartialSearch === 'true', verseToScrollTo: verse });
+        }
+
+        // NEU: Klick auf einen Ranglisten-Link
+        const rankLink = e.target.closest('a.search-rank-link'); // Klick auf einen Link in der Rangliste
+        if (rankLink && rankLink.classList.contains('book-rank')) {
+            // Klick auf einen BUCH-Link
+            e.preventDefault();
+            const book = rankLink.dataset.book;
+            const searchTermString = rankLink.dataset.searchTerm;
+            const isPartial = rankLink.dataset.partialSearch === 'true';
+            
+            // KORREKTUR: Rekonstruiere Suchbegriffe und Modus korrekt
+            const isAndSearch = searchTermString.includes('++');
+            const searchTerms = searchTermString.split(isAndSearch ? '++' : '+').map(t => t.trim()).filter(Boolean);
+
+            const searchPool = filterPoolByScope(allVerses);
+            const regexes = searchTerms.map(term => {
+                const escaped = term.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+                return isPartial ? new RegExp(escaped, 'i') : new RegExp(`\\b${escaped}\\b`, 'i');
+            });
+
+            let resultsInBook;
+            if (isAndSearch) {
+                resultsInBook = searchPool.filter(v => v.book === book && regexes.every(regex => regex.test(v.text)));
+            } else {
+                resultsInBook = searchPool.filter(v => v.book === book && regexes.some(regex => regex.test(v.text)));
+            }
+
+            // KORREKTUR: Übergebe das Array der Suchbegriffe, nicht den String
+            displaySearchResults(resultsInBook, searchTerms, isPartial, { bookFilter: book, searchMode: isAndSearch ? 'AND' : 'OR' });
+        } else if (rankLink) {
+            // Klick auf einen KAPITEL- oder VERS-Link
+            e.preventDefault();
+            const book = rankLink.dataset.book;
+            const chapter = rankLink.dataset.chapter || bookChapterStructure.find(b => b.book === book)?.chapters[0] || 1;
+            const verse = rankLink.dataset.verse;
+            const searchTermString = rankLink.dataset.searchTerm;
+            const usePartialSearch = rankLink.dataset.partialSearch === 'true';
+
+            // NEU: Suchbegriff aus dem Dataset in ein Array von einzelnen Begriffen zerlegen
+            let termsToHighlight = [];
+            if (searchTermString.includes('++')) { // UND-Suche
+                termsToHighlight = searchTermString.split('++').map(t => t.trim()).filter(Boolean);
+            } else if (searchTermString.includes('+')) { // ODER-Suche
+                termsToHighlight = searchTermString.split('+').map(t => t.trim()).filter(Boolean);
+            } else {
+                termsToHighlight = [searchTermString.trim()].filter(Boolean);
+            }
+
+            displayReadingChapter(book, chapter, { highlightTerm: termsToHighlight, usePartialSearch: usePartialSearch, verseToScrollTo: verse });
+            if (verse) {
+                setTimeout(() => { // Kurze Verzögerung, damit der DOM aktualisiert ist
+                    highlightAndScrollToVerse(verse, true);
+                }, 100); // 100ms sollten reichen, damit der DOM gerendert ist
+            }
         }
     });
+
+    // NEU: Funktion zum Auf-/Zuklappen der Suchergebnis-Details
+    function toggleSearchResultDetail(itemElement) {
+        const existingDetail = itemElement.querySelector('.search-result-detail-content');
+        if (existingDetail) {
+            existingDetail.remove();
+            return;
+        }
+
+        const book = itemElement.dataset.book;
+        const chapter = itemElement.dataset.chapter;
+        const verse = itemElement.dataset.verse;
+
+        const searchTermString = verseTextDisplay.dataset.searchTerm;
+        const usePartialSearch = verseTextDisplay.dataset.usePartialSearch === 'true';
+        const searchTerms = searchTermString.split(searchTermString.includes('++') ? '++' : '+').map(t => t.trim()).filter(Boolean);
+
+        const highlightPattern = searchTerms.map(term => {
+            const escaped = term.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+            return usePartialSearch ? escaped : `\\b${escaped}\\b`;
+        }).join('|');
+        const highlightRegex = new RegExp(`(${highlightPattern})`, 'gi');
+
+        const foundVerse = allVerses.find(v => v.book === book && v.chapter == chapter && v.verse_num == verse);
+        if (!foundVerse) return;
+
+        const highlightedText = foundVerse.text.replace(highlightRegex, '<span class="highlight">$1</span>');
+
+        const detailDiv = document.createElement('div');
+        detailDiv.className = 'search-result-detail-content';
+        detailDiv.innerHTML = `
+            <p>${highlightedText}</p>
+            <button class="button read-in-context-button" data-book="${book}" data-chapter="${chapter}" data-verse="${verse}">Im Kontext lesen</button>
+        `;
+        itemElement.appendChild(detailDiv);
+    }
+
+    verseTextDisplay.addEventListener('click', (e) => {
+        const showMoreButton = e.target.closest('button.show-more-rank');
+        const versePageButton = e.target.closest('button[data-verse-page-offset]');
+
+        if (versePageButton) {
+            e.preventDefault();
+            searchResultOffset = parseInt(versePageButton.dataset.versePageOffset, 10);
+            performSearch({ isPagination: true }); // Führe die Suche mit dem neuen Offset erneut durch
+        }
+
+        if (showMoreButton) {
+            e.preventDefault();
+            const type = showMoreButton.dataset.rankType;
+            const listElement = document.getElementById(`rank-list-${type}`);
+            const currentCount = searchRankVisibleCounts[type];
+
+
+            const allItems = JSON.parse(verseTextDisplay.dataset[`sorted${type.charAt(0).toUpperCase() + type.slice(1)}s`]);
+            
+            if (currentCount < allItems.length) {
+                const [key, count] = allItems[currentCount];
+                const searchTermString = verseTextDisplay.dataset.searchTerm;
+                const usePartialSearch = verseTextDisplay.dataset.usePartialSearch === 'true';
+
+                // KORREKTUR: Rekonstruiere searchMode und searchTerm Array aus dem String
+                const isAndSearch = searchTermString.includes('++');
+                const searchTerms = searchTermString.split(isAndSearch ? '++' : '+').map(t => t.trim()).filter(Boolean);
+
+                const lastLi = listElement.querySelector('li:last-child');
+                const lastRank = lastLi ? parseInt(lastLi.dataset.rank, 10) : 0;
+                const lastCount = lastLi ? parseInt(lastLi.dataset.count, 10) : -1;
+                const newRank = count === lastCount ? lastRank : currentCount + 1;
+
+                // NEU: Detail-Counts für nachgeladene Elemente hinzufügen
+                const bookDetails = JSON.parse(verseTextDisplay.dataset.bookDetailCounts);
+                const chapterDetails = JSON.parse(verseTextDisplay.dataset.chapterDetailCounts);
+                const verseDetails = JSON.parse(verseTextDisplay.dataset.verseDetailCounts);
+                let detailHtml = '';
+                if (isAndSearch && searchTerms.length > 1) {
+                    const detailData = type === 'book' ? bookDetails[key] : (type === 'chapter' ? chapterDetails[key] : verseDetails[key]);
+                    if (detailData) {
+                        const details = searchTerms.map(term => `${term}: ${detailData[term] || 0}`).join(', ');
+                        detailHtml = ` <span class="detail-counts">(${details})</span>`;
+                    }
+                }
+                let newLiHtml = `<li data-rank="${newRank}" data-count="${count}"><span class="rank-number">${newRank}.</span> `;
+                if (type === 'book') {
+                    newLiHtml += `<a href="#" class="search-rank-link book-rank" data-book="${key}" data-search-term="${searchTermString}" data-partial-search="${usePartialSearch}">${key}</a>`;
+                } else {
+                    const isVerse = type === 'verse';
+                    const match = isVerse ? key.match(/^(.+?)\s(\d+),(\d+)$/) : key.match(/^(.+?)\s(\d+)$/);
+                    if (match) {
+                        const [_, book, chapter, verseNum] = match;
+                        newLiHtml += `<a href="#" class="search-rank-link" data-book="${book}" data-chapter="${chapter}" data-verse="${verseNum || 1}" data-search-term="${searchTermString}" data-partial-search="${usePartialSearch}">${key}</a>`;
+                    }
+                }
+                newLiHtml += `<span class="count">${count}</span><a class="density-link" data-type="${type}" data-key="${key}" data-count="${count}">(Dichte)</a>${detailHtml}</li>`;
+                
+                listElement.insertAdjacentHTML('beforeend', newLiHtml);
+                searchRankVisibleCounts[type]++;
+
+                // Button ausblenden, wenn das Ende erreicht ist
+                if (searchRankVisibleCounts[type] >= allItems.length) {
+                    showMoreButton.style.display = 'none';
+                }
+            }
+        }
+    });
+    // NEU: Event-Listener für den Sortier-Umschalt-Button
+    verseTextDisplay.addEventListener('click', (e) => {
+        const sortButton = e.target.closest('#toggle-rank-sort-button');
+        if (!sortButton) return;
+
+        e.preventDefault();
+        const currentMode = sortButton.dataset.sortMode;
+        const newMode = currentMode === 'sum' ? 'min' : 'sum';
+        sortButton.dataset.sortMode = newMode;
+        sortButton.textContent = newMode === 'min' ? 'Nach Summe sortieren' : 'Nach Minimum sortieren';
+
+        // Lade die Originaldaten aus dem Dataset
+        const originalBooks = JSON.parse(verseTextDisplay.dataset.sortedBooks);
+        const originalChapters = JSON.parse(verseTextDisplay.dataset.sortedChapters);
+        const originalVerses = JSON.parse(verseTextDisplay.dataset.sortedVerses);
+        const bookDetails = JSON.parse(verseTextDisplay.dataset.bookDetailCounts);
+        const chapterDetails = JSON.parse(verseTextDisplay.dataset.chapterDetailCounts);
+        const verseDetails = JSON.parse(verseTextDisplay.dataset.verseDetailCounts);
+        const searchTerms = verseTextDisplay.dataset.searchTerm.split('++');
+
+        const reSort = (originalList, detailList) => {
+            // KORREKTUR: Erstelle eine Kopie, um die Originaldaten nicht zu verändern.
+            const listCopy = [...originalList];
+            if (newMode === 'sum') {
+                // KORREKTUR: Sortiere explizit nach der Summe (dem zweiten Element im Array, `b[1] - a[1]`),
+                // um die ursprüngliche Reihenfolge zuverlässig wiederherzustellen.
+                listCopy.sort((a, b) => b[1] - a[1]);
+                return listCopy;
+            }
+            // Sortiere nach Minimum
+            listCopy.sort((a, b) => {
+                const keyA = a[0];
+                const keyB = b[0];
+                const detailsA = detailList[keyA];
+                const detailsB = detailList[keyB];
+
+                const minA = detailsA ? Math.min(...searchTerms.map(term => detailsA[term] || 0)) : 0;
+                const minB = detailsB ? Math.min(...searchTerms.map(term => detailsB[term] || 0)) : 0;
+
+                // Wenn die Minimalwerte gleich sind, sortiere sekundär nach der Gesamtsumme.
+                if (minB - minA === 0) {
+                    return b[1] - a[1];
+                }
+                return minB - minA;
+            });
+            return listCopy;
+        };
+
+        const newSortedBooks = reSort([...originalBooks], bookDetails);
+        const newSortedChapters = reSort([...originalChapters], chapterDetails);
+        const newSortedVerses = reSort([...originalVerses], verseDetails);
+
+        // Zeichne die Listen neu
+        const redrawList = (type, sortedData, detailList) => {
+            const listElement = document.getElementById(`rank-list-${type}`);
+            if (!listElement) return;
+
+            // Nur die ersten 10 Elemente neu zeichnen
+            const visibleCount = searchRankVisibleCounts[type];
+            const itemsToShow = sortedData.slice(0, visibleCount);
+            let listHtml = '';
+            let lastSortValue = -1, rank = 0;
+
+            // KORREKTUR: Helferfunktion für Detail-Counts hier verfügbar machen
+            const getDetailCountHtml = (type, key, terms) => {
+                if (newMode !== 'sum' && newMode !== 'min') return ''; // Nur bei UND-Suche
+                const details = detailList[key];
+                if (!details) return '';
+                const detailString = terms.map(term => `${term}: ${details[term] || 0}`).join(', ');
+                return ` <span class="detail-counts">(${detailString})</span>`;
+            };
+            // KORREKTUR: HTML neu aufbauen, anstatt altes zu kopieren
+            itemsToShow.forEach(([key, count], index) => {
+                const currentSortValue = newMode === 'min' ? (detailList[key] ? Math.min(...searchTerms.map(term => detailList[key][term] || 0)) : 0) : count;
+                
+                if (currentSortValue !== lastSortValue) { rank = index + 1; }
+                lastSortValue = currentSortValue;
+
+                const detailHtml = getDetailCountHtml(type, key, searchTerms); // Rufe die Helferfunktion auf
+                
+                // NEU: Bestimme, welche Zahl groß und welche klein angezeigt wird
+                const mainCount = newMode === 'min' ? currentSortValue : count;
+                const secondaryCountHtml = newMode === 'min' ? ` <span class="count-secondary">(Summe: ${count})</span>` : '';
+
+                let newLiHtml = `<li data-rank="${rank}" data-count="${count}"><span class="rank-number">${rank}.</span> `;
+                if (type === 'book') {
+                    newLiHtml += `<a href="#" class="search-rank-link book-rank" data-book="${key}" data-search-term="${verseTextDisplay.dataset.searchTerm}" data-partial-search="${verseTextDisplay.dataset.usePartialSearch}">${key}</a>`;
+                } else {
+                    const isVerse = type === 'verse';
+                    const match = isVerse ? key.match(/^(.+?)\s(\d+),(\d+)$/) : key.match(/^(.+?)\s(\d+)$/);
+                    if (match) {
+                        const [_, book, chapter, verseNum] = match;
+                        newLiHtml += `<a href="#" class="search-rank-link" data-book="${book}" data-chapter="${chapter}" data-verse="${verseNum || 1}" data-search-term="${verseTextDisplay.dataset.searchTerm}" data-partial-search="${verseTextDisplay.dataset.usePartialSearch}">${key}</a>`;
+                    }
+                }
+                // KORREKTUR: Füge die neue Zähl-Logik ein
+                newLiHtml += `<span class="count">${mainCount}</span>${secondaryCountHtml}<a class="density-link" data-type="${type}" data-key="${key}" data-count="${count}">(Dichte)</a>${detailHtml}</li>`;
+                listHtml += newLiHtml;
+            });
+
+            listElement.innerHTML = listHtml;
+        };
+        
+        redrawList('book', newSortedBooks, bookDetails);
+        redrawList('chapter', newSortedChapters, chapterDetails);
+        redrawList('verse', newSortedVerses, verseDetails);
+    });
+    // KORREKTUR: Event-Listener für die On-Demand-Dichte-ANZEIGE
+    verseTextDisplay.addEventListener('click', (e) => {
+        const clickedDensityLink = e.target.closest('.density-link');
+        if (clickedDensityLink && !clickedDensityLink.dataset.sorted) {
+            e.preventDefault();
+            const targetRank = clickedDensityLink.closest('li').dataset.rank;
+            const parentList = clickedDensityLink.closest('ul');
+
+            // 1. Sammle alle Elemente des gleichen Rangs
+            const rankGroup = Array.from(parentList.querySelectorAll(`li[data-rank="${targetRank}"]`));
+            
+            // 2. Erstelle ein Array von Objekten mit den notwendigen Daten zum Sortieren
+            const itemsToSort = rankGroup.map(li => {
+                const link = li.querySelector('.density-link');
+                const type = link.dataset.type;
+                const key = link.dataset.key;
+                const count = parseInt(link.dataset.count, 10);
+                let totalChars = 1;
+                if (type === 'book') totalChars = bookCharCounts[key] || 1;
+                else if (type === 'chapter') totalChars = chapterCharCounts[key] || 1;
+                else if (type === 'verse') {
+                    const verse = allVerses.find(v => `${v.book} ${v.chapter},${v.verse_num}` === key);
+                    totalChars = verse ? verse.text.length : 1;
+                }
+                const density = (count / totalChars) * 1000;
+                return { li, density };
+            });
+
+            // 3. Sortiere die Gruppe nach Dichte (absteigend)
+            itemsToSort.sort((a, b) => b.density - a.density);
+
+            // 4. Aktualisiere das DOM
+            itemsToSort.forEach((item, index) => {
+                const { li, density } = item;
+                // Aktualisiere die Rangnummer
+                const rankNumberEl = li.querySelector('.rank-number');
+                rankNumberEl.textContent = `${targetRank}.${index + 1}`;
+                
+                // Aktualisiere den Dichte-Link
+                const densityLink = li.querySelector('.density-link');
+                densityLink.textContent = `Dichte: ${density.toFixed(2)}`;
+                densityLink.style.pointerEvents = 'none';
+                densityLink.dataset.sorted = "true";
+
+                // Füge das sortierte Element wieder in die Liste ein
+                parentList.insertBefore(li, rankGroup[0]);
+            });
+        }
+    });
+
     // --- 5. Event Listeners --- 
     testamentRadios.forEach(radio => radio.addEventListener('change', () => {
         if (DEBUG_SYNC) console.log(`[SyncDebug] Event: Testament radio changed to ${radio.value}`);
@@ -1673,22 +2805,31 @@ document.addEventListener('mainScriptReady', async () => {
         isUpdating = false;
         // KORREKTUR: Nach der Aktualisierung der Dropdowns muss die Position synchronisiert werden.
         syncSelectionToPosition();
+
+        // NEU: Wenn im Lesemodus, aktualisiere die Leseansicht auf das neue Kapitel.
+        if (quizMode === 'readMode') {
+            // Lese die neuen Werte aus den gerade aktualisierten Dropdowns.
+            displayReadingChapter(bookSelect.value, chapterSelect.value);
+        }
     }));
 
     bookSelect.addEventListener('change', () => {
         if (DEBUG_SYNC) console.log(`[SyncDebug] Event: Book select changed to ${bookSelect.value}`);
-        if (isUpdating) return;
-        isUpdating = true;
-        updateChapterDropdown();
+        if (isUpdating) return; // Verhindert, dass eine externe Synchronisation diesen Listener erneut auslöst.
+
         if (quizMode === 'readMode') {
+            // Im Lesemodus wird die Synchronisation über displayReadingChapter gehandhabt.
             displayReadingChapter(bookSelect.value, chapterSelect.value);
         } else {
+            // KORREKTUR: Verfeinerte isUpdating-Logik, um die Synchronisationskette nicht zu unterbrechen.
+            isUpdating = true; // Sperre setzen
+            updateChapterDropdown();
             selectFirstAvailableOption(chapterSelect); // Wähle erstes Kapitel
             updateVerseDropdown();
             selectFirstAvailableOption(verseSelect); // Wähle ersten Vers
+            isUpdating = false; // Sperre aufheben, BEVOR die finale Synchronisation erfolgt.
             syncSelectionToPosition();
         }
-        isUpdating = false;
     });
 
     chapterSelect.addEventListener('change', () => {
@@ -1706,7 +2847,12 @@ document.addEventListener('mainScriptReady', async () => {
     verseSelect.addEventListener('change', () => {
         if (DEBUG_SYNC) console.log(`[SyncDebug] Event: Verse select changed to ${verseSelect.value}`);
         if (isUpdating) return;
-        syncSelectionToPosition();
+        if (quizMode === 'readMode') {
+            // NEU: Im Lesemodus nur den Vers hervorheben
+            highlightAndScrollToVerse(verseSelect.value);
+        } else {
+            syncSelectionToPosition();
+        }
     });
 
     positionInput.addEventListener('input', () => {
@@ -1734,11 +2880,57 @@ document.addEventListener('mainScriptReady', async () => {
         chapterSelect.dispatchEvent(new Event('change'));
     });
 
-    verseSlider.addEventListener('input', () => {
+    // KORREKTUR: Scroll-Verhalten nur beim Loslassen des Sliders auslösen
+    verseSlider.addEventListener('input', () => { // Feuert während des Ziehens
         if (isUpdating) return;
         verseSelect.selectedIndex = verseSlider.value;
         updateSliderOutput(verseSlider, verseSliderOutput);
-        verseSelect.dispatchEvent(new Event('change'));
+    });
+
+    verseSlider.addEventListener('change', () => { // Feuert nach dem Loslassen
+        if (isUpdating) return;
+        if (quizMode === 'readMode') {
+            highlightAndScrollToVerse(verseSelect.value);
+        } else {
+            verseSelect.dispatchEvent(new Event('change')); // Löst syncSelectionToPosition aus
+        }
+    });
+
+    // NEU: Hilfsfunktion zum Hervorheben eines Verses
+    function highlightAndScrollToVerse(verseNum, isFromSearch = false) {
+        // Entferne alte Highlights
+        const oldHighlights = verseTextDisplay.querySelectorAll('.reading-highlight');
+        oldHighlights.forEach(el => el.classList.remove('reading-highlight'));
+        // Füge neues Highlight hinzu
+        const verseElement = verseTextDisplay.querySelector(`p[data-verse-num="${verseNum}"]`);
+        if (verseElement) { // KORREKTUR: Füge nur eine Klasse hinzu, anstatt den Inhalt zu ersetzen.
+            verseElement.classList.add('reading-highlight');
+            verseElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+    }
+
+    // NEU: Event-Listener für die Seed-Navigation
+    prevTaskButton.addEventListener('click', () => {
+        const isSequentialMc = (quizMode === 'multipleChoice' && document.querySelector('input[name="mc-order"]:checked').value === 'sequential');
+        if (currentSeedString) {
+            displayTaskFromSeededQueue(seededQueueIndex - 1);
+        } else if (isSequentialMc) {
+            // KORREKTUR: mcCurrentIndex zeigt auf die *nächste* Frage. Die aktuelle ist also index-1.
+            const newIndex = mcCurrentIndex - 2;
+            if (newIndex >= 0 && newIndex < mcQuestionQueue.length) {
+                mcCurrentIndex = newIndex + 1; // Setze den Index für den nächsten Aufruf
+                displayMcQuestionContent(mcQuestionQueue[newIndex]);
+            }
+        }
+    });
+    nextTaskButton.addEventListener('click', () => {
+        const isSequentialMc = (quizMode === 'multipleChoice' && document.querySelector('input[name="mc-order"]:checked').value === 'sequential');
+        if (currentSeedString) {
+            displayTaskFromSeededQueue(seededQueueIndex + 1);
+        } else if (isSequentialMc) {
+            // KORREKTUR: mcCurrentIndex zeigt bereits auf die nächste Frage.
+            startNewRound(); // Ruft einfach die Logik für die nächste Runde auf
+        }
     });
 
     // NEU: Event-Listener für die Kontextansicht
@@ -1761,27 +2953,16 @@ document.addEventListener('mainScriptReady', async () => {
     // NEU (Kapitel-Quiz): Event-Listener für die Spielmodus-Auswahl
     gameModeRadios.forEach(radio => radio.addEventListener('change', (e) => {
         setQuizModeUI(e.target.value);
-        // Setze den Seed-Generator zurück, wenn der Modus gewechselt wird,
-        // um eine konsistente Startfrage für einen gegebenen Seed zu gewährleisten.
-        if (currentSeedString) {
-            randomGenerator = mulberry32(cyrb128(currentSeedString));
-        } else {
-            randomGenerator = Math.random;
-        }
-        // Starte direkt eine neue Runde im gewählten Modus
-        startNewRound();
+        // Wenn ein Seed aktiv ist, baue die Queue neu auf und starte bei 0.
+        // Ansonsten starte eine normale, zufällige neue Runde.
+        if (currentSeedString) rebuildAndStartFromSeed();
+        else startNewRound();
     }));
 
     // NEU: Event-Listener für die MC-Reihenfolge-Optionen
     mcQuizOptions.addEventListener('change', () => {
-        // Setze den Fortschritt zurück, wenn die Reihenfolge geändert wird
-        mcQuestionQueue = [];
-        // Setze auch den Seed-Generator zurück
-        if (currentSeedString) {
-            randomGenerator = mulberry32(cyrb128(currentSeedString));
-        } else {
-            randomGenerator = Math.random;
-        }
+        // KORREKTUR: Rufe setQuizModeUI auf, um die Button-Sichtbarkeit korrekt zu aktualisieren.
+        setQuizModeUI(quizMode);
         startNewRound();
     });
 
@@ -1841,14 +3022,11 @@ document.addEventListener('mainScriptReady', async () => {
         if (gameModeSelection) gameModeSelection.style.display = 'block';
         // NEU (Bereichsauswahl): Zeige die Bereichsauswahl an
         if (scopeSelectionContainer) scopeSelectionContainer.style.display = 'block';
-        setQuizModeUI(document.querySelector('input[name="game-mode"]:checked').value);
-        // Setze den Zufallsgenerator basierend auf dem aktuellen Seed-Input zurück
-        if (currentSeedString) {
-            randomGenerator = mulberry32(cyrb128(currentSeedString));
-        } else {
-            randomGenerator = Math.random;
-        }
-        startNewRound();
+        // KORREKTUR: Beim Start immer den Lesemodus initialisieren.
+        document.querySelector('input[name="game-mode"][value="readMode"]').checked = true;
+        setQuizModeUI('readMode');
+        setInitialSelection(); // Setzt die Auswahl auf 1. Mose 1,1
+        displayReadingChapter('1. Mose', 1); // Zeigt das erste Kapitel an
     }
 
     // --- Multiplayer-Setup ---

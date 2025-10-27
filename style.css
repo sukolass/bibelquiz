@@ -179,3 +179,91 @@ legend {
 .mc-option-button.correct { background-color: #d4edda; border-color: #c3e6cb; }
 .mc-option-button.incorrect { background-color: #f8d7da; border-color: #f5c6cb; }
 .mc-option-button:disabled { cursor: not-allowed; opacity: 0.7; }
+
+/* --- Suchergebnis-Hervorhebung --- */
+.highlight {
+    color: blue;
+    font-weight: bold;
+    text-decoration: underline;
+    text-decoration-color: green;
+    text-decoration-thickness: 2px;
+    background-color: transparent; /* Stellt sicher, dass kein anderer Hintergrund stört */
+}
+
+.reading-highlight {
+    background-color: #fff8c4; /* Leichter gelber Hintergrund für den ganzen Vers */
+    border-radius: 4px;
+}
+
+.detail-counts {
+    font-size: 0.8em;
+    color: #666;
+}
+
+.count-secondary {
+    font-size: 0.8em;
+    color: #777;
+    margin-left: 4px;
+}
+/* --- Interaktive Suchergebnisse --- */
+.search-result-item {
+    border-bottom: 1px solid #eee;
+    padding: 8px 4px;
+}
+
+.search-result-ref {
+    font-weight: bold;
+    color: #0056b3;
+    text-decoration: none;
+    cursor: pointer;
+}
+.search-result-ref:hover {
+    text-decoration: underline;
+}
+
+.search-result-preview {
+    color: #555;
+    font-size: 0.9em;
+}
+
+.search-result-detail-content {
+    background-color: #f8f9fa;
+    border: 1px solid #dee2e6;
+    border-radius: 4px;
+    padding: 10px;
+    margin-top: 8px;
+}
+.search-result-detail-content p {
+    margin-top: 0;
+}
+
+/* --- MC-Modus Zähler --- */
+#mc-question-counters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 15px;
+    justify-content: center;
+    align-items: center;
+    padding: 10px;
+    background-color: #f8f9fa;
+    border-radius: 8px;
+    border: 1px solid #e9ecef;
+}
+
+.mc-counter-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.9em;
+}
+
+.progress-circle {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: conic-gradient(#28a745 var(--progress-angle, 0deg), #e0e0e0 0deg);
+    transition: background 0.3s;
+}
+.mc-counter-item span {
+    white-space: nowrap;
+}
