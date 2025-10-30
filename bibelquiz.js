@@ -237,8 +237,8 @@ document.addEventListener('mainScriptReady', async () => {
 
             allVerses = lines.map(line => {
                 if (!line.trim()) return null;
-                const parts = line.split(';', 5);
-                if (parts.length < 5) {
+                const parts = line.split(';');
+                if (parts.length < 5) { // Es müssen mindestens 4 Trennzeichen vorhanden sein
                     console.warn(`[Bibelquiz] Zeile übersprungen (zu wenige Teile): "${line}"`);
                     return null;
                 }
@@ -247,7 +247,7 @@ document.addEventListener('mainScriptReady', async () => {
                 const book = parts[1].trim();
                 const chapter = parseInt(parts[2], 10);
                 const verse_num = parseInt(parts[3], 10);
-                const verseText = parts[4].trim();
+                const verseText = parts.slice(4).join(';').trim(); // Alles nach dem 4. Semikolon ist der Text
 
                 if (isNaN(id) || !book || isNaN(chapter) || isNaN(verse_num) || !verseText) {
                     console.warn(`[Bibelquiz] Zeile übersprungen (ungültige Daten): "${line}"`);
