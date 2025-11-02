@@ -47,6 +47,7 @@ document.addEventListener('mainScriptReady', async () => {
         const gapSearchContainer = document.getElementById('gap-search-container');
         const gapSearchInput = document.getElementById('gap-search-input');
         const gapSearchButton = document.getElementById('gap-search-button');
+
         const clearSearchButton = document.getElementById('clear-search-button');
 
         const applyScopeButton = document.getElementById('apply-scope-button');
@@ -131,6 +132,7 @@ document.addEventListener('mainScriptReady', async () => {
     let isUpdating = false; // Flag zur Verhinderung von Endlosschleifen
     let currentContext = { book: null, chapter: null }; // Zustand für die Kontextansicht
     let bookChapterStructure = []; // Struktur für die Kapitelnavigation
+    let canonicalBookOrder = []; // NEU: Unveränderliche Liste der Bücher in biblischer Reihenfolge.
     // NEU: Promise, das signalisiert, wann die Verse fertig geladen und verarbeitet sind.
     let versesLoadedPromise;
     // NEU: Zustand für den Seed-basierten Zufallsgenerator
@@ -144,6 +146,11 @@ document.addEventListener('mainScriptReady', async () => {
     let bookCharCounts = {};
     let chapterCharCounts = {};
     let searchRankVisibleCounts = { book: 10, chapter: 10, verse: 10 }; // NEU für "Mehr anzeigen"
+    // NEU: Daten für die Statistik-Seite
+    // NEU: Datenstruktur für Querverweise
+    let manualCrossReferenceMap = {}; // Umbenannt für Klarheit
+    // NEU: Datenstruktur für automatisch erkannte identische Verse
+    let identicalVerseMap = {};
     let searchResultOffset = 0; // NEU für Paginierung der Suchergebnisliste
 
 
@@ -169,12 +176,12 @@ document.addEventListener('mainScriptReady', async () => {
         "Matthäus", "Markus", "Lukas", "Johannes", "Apostelgeschichte", "Römer",
         "1. Korinther", "2. Korinther", "Galater", "Epheser", "Philipper", "Kolosser",
         "1. Thessalonicher", "2. Thessalonicher", "1. Timotheus", "2. Timotheus", "Titus",
+        "1. Thessalonicher", "2. Thessalonicher", "1. Timotheus", "2. Timotheus", "Titus", // KORREKTUR: task-slider-output zu taskSliderOutput
         "Philemon", "Hebräer", "Jakobus", "1. Petrus", "2. Petrus", "1. Johannes",
         "2. Johannes", "3. Johannes", "Judas", "Offenbarung"
     ];
-
     if (!bibleQuizView || !bookSelect || !positionSlider || !ctx || !contextView || !showContextButton || !hostInfoDiv || !gameModeSelection || !scopeSelectionContainer || !quizInputColumn || !contextSummary || !searchInput || !referenceInput || !gotoReferenceButton || !randomChapterButton || !mcQuizOptions || !seedInput || !clearSeedButton || !seedExplanationModal || !seededNavContainer || !mcQuestionCounters || !taskSliderContainer || !taskSlider || !taskSliderOutput || !partialWordSearchCheckbox || !showSearchStatsCheckbox || !searchScopeContainer || !openSearchScopeModalButton || !seedContainer || !gapSearchContainer || !gapSearchInput || !gapSearchButton) {
-        console.error('[FATAL] Ein oder mehrere kritische Bibelquiz-Elemente wurden im HTML nicht gefunden. Skript wird angehalten.');
+        console.error('[FATAL] Ein oder mehrere kritische Bibelquiz-Elemente wurden im HTML nicht gefunden. Skript wird angehalten.', {bibleQuizView , bookSelect , positionSlider , ctx , contextView , showContextButton , hostInfoDiv , gameModeSelection , scopeSelectionContainer , quizInputColumn , contextSummary , searchInput , referenceInput , gotoReferenceButton , randomChapterButton , mcQuizOptions , seedInput , clearSeedButton , seedExplanationModal , seededNavContainer , mcQuestionCounters , taskSliderContainer , taskSlider , taskSliderOutput , partialWordSearchCheckbox , showSearchStatsCheckbox , searchScopeContainer , openSearchScopeModalButton , seedContainer , gapSearchContainer , gapSearchInput , gapSearchButton});
         return;
     }
 
@@ -247,15 +254,39 @@ document.addEventListener('mainScriptReady', async () => {
                 const book = parts[1].trim();
                 const chapter = parseInt(parts[2], 10);
                 const verse_num = parseInt(parts[3], 10);
-                const verseText = parts.slice(4).join(';').trim(); // Alles nach dem 4. Semikolon ist der Text
+                const verseTextWithMarkers = parts.slice(4).join(';').trim(); // Der komplette Text inklusive [__ZAHL__]
 
-                if (isNaN(id) || !book || isNaN(chapter) || isNaN(verse_num) || !verseText) {
+                // --- Verarbeitung für manuelle Querverweise ---
+                const crossRefRegex = /\[__(\d+)__\]/g;
+                let manualMatch;
+                while ((manualMatch = crossRefRegex.exec(verseTextWithMarkers)) !== null) {
+                    const refId = manualMatch[1]; // KORREKTUR: `match` war ein Tippfehler, es muss `manualMatch` sein.
+                    const uniqueRefKey = `${book}-${chapter}-${refId}`; // Eindeutiger Schlüssel für manuelle Verweise
+                    if (!manualCrossReferenceMap[uniqueRefKey]) {
+                        manualCrossReferenceMap[uniqueRefKey] = [];
+                    }
+                    manualCrossReferenceMap[uniqueRefKey].push(id);
+                }
+
+                // --- Verarbeitung für automatische Querverweise (identische Verse) ---
+                // KORREKTUR: Der Text für den Vergleich wird von den Markern bereinigt.
+                // Der Originaltext für die Anzeige (`verseTextWithMarkers`) bleibt aber erhalten.
+                const verseTextForComparison = verseTextWithMarkers.replace(crossRefRegex, '').trim();
+                const normalizedText = verseTextForComparison.toLowerCase().replace(/[.,;!?"]/g, '').replace(/\s+/g, ' ').trim(); // KORREKTUR: Doppelte Deklaration entfernt.
+                if (normalizedText) {
+                    if (!identicalVerseMap[normalizedText]) {
+                        identicalVerseMap[normalizedText] = [];
+                    }
+                    identicalVerseMap[normalizedText].push(id);
+                }
+
+                if (isNaN(id) || !book || isNaN(chapter) || isNaN(verse_num) || !verseTextWithMarkers) {
                     console.warn(`[Bibelquiz] Zeile übersprungen (ungültige Daten): "${line}"`);
                     return null;
                 }
 
-                return {
-                    id, book, chapter, verse_num, text: verseText,
+                 return {
+                    id, book, chapter, verse_num, text: verseTextWithMarkers, // KORREKTUR: Speichere den Text MIT Markern
                     testament: NT_BOOKS.includes(book) ? "NT" : "AT"
                 };
             }).filter(Boolean);
@@ -271,8 +302,8 @@ document.addEventListener('mainScriptReady', async () => {
 
                 // NEU: Erstelle die Buch-Kapitel-Struktur für die Navigation
                 const books = [...new Set(allVerses.map(v => v.book))];
-                const canonicalOrder = [...new Set(allVerses.map(v => v.book))];
-                books.sort((a, b) => canonicalOrder.indexOf(a) - canonicalOrder.indexOf(b));
+                // NEU: Fülle die einmalige, kanonische Buchreihenfolge. Diese wird nie wieder verändert.
+                canonicalBookOrder = [...new Set(allVerses.map(v => v.book))];
 
                 bookChapterStructure = books.map(book => {
                     const chapters = [...new Set(allVerses.filter(v => v.book === book).map(v => v.chapter))].sort((a, b) => a - b);
@@ -282,7 +313,7 @@ document.addEventListener('mainScriptReady', async () => {
                         book: book,
                         chapters: chapters
                     };
-                });
+                }).sort((a, b) => canonicalBookOrder.indexOf(a.book) - canonicalBookOrder.indexOf(b.book)); // Sortiere die Struktur selbst auch kanonisch.
                 console.log('[Bibelquiz] Buch-Kapitel-Struktur für Kontextnavigation erstellt.');
 
                 resolveVersesLoaded(true); // Signalisiere, dass das Laden erfolgreich war.
@@ -793,9 +824,30 @@ document.addEventListener('mainScriptReady', async () => {
 
     function displayVerseContent(verse) {
         currentVerse = verse;
+        let interactiveText = verse.text;
+        // KORREKTUR: Der Text für den Vergleich wird hier erneut bereinigt.
+        const verseTextForComparison = verse.text.replace(/\[__\d+__\]/g, '').trim();
+
+        // NEU: Füge Links für automatisch gefundene identische Verse hinzu
+        const normalizedText = verseTextForComparison.toLowerCase().replace(/[.,;!?"]/g, '').replace(/\s+/g, ' ').trim();
+        const identicalVerses = identicalVerseMap[normalizedText] || [];
+        if (normalizedText && identicalVerses.length > 1) {
+            // Füge den Link für identische Verse hinzu
+            interactiveText += ` <a href="#" class="identical-verse-link" data-text-key="${normalizedText}" title="Zeige identische Verse">[§]</a>`;
+        }
+
+        // NEU: Verwandle manuelle Querverweis-Marker in klickbare Links
+        const manualCrossRefRegex = /\[__(\d+)__\]/g;
+        interactiveText = interactiveText.replace(
+            manualCrossRefRegex,
+            (match, refId) => {
+                const uniqueRefKey = `${verse.book}-${verse.chapter}-${refId}`;
+                return `<a href="#" class="manual-cross-ref-link" data-ref-id="${uniqueRefKey}" title="Querverweise anzeigen">[§${refId}]</a>`;
+            });
+
         currentChapterHeadings = null; // Sicherstellen, dass der alte Zustand gelöscht ist
         currentSummary = null;
-        verseTextDisplay.textContent = verse.text;
+        verseTextDisplay.innerHTML = interactiveText;
         resetFeedbackAndControls();
     }
 
@@ -882,8 +934,28 @@ document.addEventListener('mainScriptReady', async () => {
         chapterVerses.forEach(verse => {
             let verseText = verse.text;
             if (highlightRegex) {
-                verseText = verseText.replace(highlightRegex, '<span class="highlight">$&</span>');
+                verseText = verseText.replace(highlightRegex, '<span class="highlight">$1</span>');
             }
+
+            // KORREKTUR: Der Text für den Vergleich wird hier erneut bereinigt.
+            const verseTextForComparison = verse.text.replace(/\[__\d+__\]/g, '').trim();
+
+            // NEU: Füge Links für automatisch gefundene identische Verse hinzu
+            const normalizedText = verseTextForComparison.toLowerCase().replace(/[.,;!?"]/g, '').replace(/\s+/g, ' ').trim();
+            const identicalVerses = identicalVerseMap[normalizedText] || [];
+            if (normalizedText && identicalVerses.length > 1) {
+                verseText += ` <a href="#" class="identical-verse-link" data-text-key="${normalizedText}" title="Zeige identische Verse">[§]</a>`;
+            }
+
+            // NEU: Auch im Lesemodus die manuellen Querverweise interaktiv machen
+            const manualCrossRefRegex = /\[__(\d+)__\]/g;
+            verseText = verseText.replace(
+                manualCrossRefRegex,
+                (match, refId) => {
+                    const uniqueRefKey = `${verse.book}-${verse.chapter}-${refId}`;
+                    return `<a href="#" class="manual-cross-ref-link" data-ref-id="${uniqueRefKey}" title="Querverweise anzeigen">[§${refId}]</a>`;
+                });
+
             verseHtml += `<p data-verse-num="${verse.verse_num}"><sup>${verse.verse_num}</sup> ${verseText}</p>`;
         });
 
@@ -994,114 +1066,115 @@ document.addEventListener('mainScriptReady', async () => {
         const operator = searchMode === 'AND' ? ' ++ ' : ' + ';
         const searchTermStringForLinks = Array.isArray(searchTerm) ? searchTerm.join(operator) : searchTerm;
 
-        // Helferfunktion zum Rendern der Ergebnisse, wird von beiden Pfaden (Worker/Main-Thread) genutzt
         const renderResults = (sortedBooks, sortedChapters, sortedVerses, finalResults) => {
-            if (showSearchStatsCheckbox.checked && !bookFilter) { // Statistiken nur anzeigen, wenn Checkbox aktiv und kein Buch-Filter gesetzt ist
-            
-            // NEU: Button für alternative Sortierung bei UND-Suche
-            if (searchMode === 'AND' && Array.isArray(searchTerm) && searchTerm.length > 1) {
-                rankHtml += `<div class="rank-sort-toggle"><button id="toggle-rank-sort-button" class="button" data-sort-mode="sum">Nach Minimum sortieren</button></div>`;
-            }
-
-
-            const initialDisplayCount = 10;
-            rankHtml += '<div class="search-stats-wrapper">'; // NEU: Wrapper für Flexbox-Layout
-
-            // Helferfunktion für "Mehr anzeigen"-Button
-            const getShowMoreButton = (type, total) => {
-                return total > initialDisplayCount ? `<div class="rank-show-more-container"><button class="button show-more-rank" data-rank-type="${type}">+</button></div>` : '';
-            };
-
-            // NEU: Helferfunktion zur Anzeige der Detail-Counts für UND-Suchen
-            const getDetailCountHtml = (type, key, terms) => {
-                if (searchMode !== 'AND' || terms.length <= 1) return '';
-                
-                const detailCounts = type === 'book' ? bookDetailCounts[key] : (type === 'chapter' ? chapterDetailCounts[key] : verseDetailCounts[key]);
-                if (!detailCounts) return '';
-
-                const details = terms.map(term => `${term}: ${detailCounts[term] || 0}`).join(', ');
-                return ` <span class="detail-counts">(${details})</span>`;
-            };
-
-            rankHtml += `<div class="search-rank-container"><h4>Vorkommen nach Buch</h4><ul class="search-rank-list" id="rank-list-book">`;
-            // KORREKTUR: Füge Rangnummern hinzu
-            let lastBookCount = -1, bookRank = 0;
-            sortedBooks.slice(0, initialDisplayCount).forEach(([book, count], index) => {
-                if (count !== lastBookCount) { bookRank = index + 1; }
-                lastBookCount = count;
-                rankHtml += `<li data-rank="${bookRank}" data-count="${count}"><span class="rank-number">${bookRank}.</span> <a href="#" class="search-rank-link book-rank" data-book="${book}" data-search-term="${searchTermStringForLinks}" data-partial-search="${usePartialSearch}">${book}</a><span class="count">${count}</span><a class="density-link" data-type="book" data-key="${book}" data-count="${count}">(Dichte)</a></li>`;
-                rankHtml += getDetailCountHtml('book', book, searchTerm);
-            });
-            rankHtml += `</ul>${getShowMoreButton('book', sortedBooks.length)}</div>`;
-
-            rankHtml += `<div class="search-rank-container"><h4>Vorkommen nach Kapitel</h4><ul class="search-rank-list" id="rank-list-chapter">`;
-            // KORREKTUR: Füge Rangnummern hinzu
-            let lastChapterCount = -1, chapterRank = 0;
-            sortedChapters.slice(0, initialDisplayCount).forEach(([chapterRef, count], index) => {
-                if (count !== lastChapterCount) { chapterRank = index + 1; }
-                lastChapterCount = count;
-                const [book, chapter] = chapterRef.split(/ (\d+)$/);
-                rankHtml += `<li data-rank="${chapterRank}" data-count="${count}"><span class="rank-number">${chapterRank}.</span> <a href="#" class="search-rank-link" data-book="${book}" data-chapter="${chapter}" data-verse="1" data-search-term="${searchTermStringForLinks}" data-partial-search="${usePartialSearch}">${chapterRef}</a><span class="count">${count}</span><a class="density-link" data-type="chapter" data-key="${chapterRef}" data-count="${count}">(Dichte)</a></li>`;
-                rankHtml += getDetailCountHtml('chapter', chapterRef, searchTerm);
-            });
-            rankHtml += `</ul>${getShowMoreButton('chapter', sortedChapters.length)}</div>`;
-
-            // NEU: Rangliste für Verse
-            rankHtml += `<div class="search-rank-container"><h4>Vorkommen nach Vers</h4><ul class="search-rank-list" id="rank-list-verse">`;
-            // KORREKTUR: Füge Rangnummern hinzu
-            let lastVerseCount = -1, verseRank = 0;
-            sortedVerses.slice(0, initialDisplayCount).forEach(([verseRef, count], index) => {
-                if (count !== lastVerseCount) { verseRank = index + 1; }
-                lastVerseCount = count;
-                const match = verseRef.match(/^(.+?)\s(\d+),(\d+)$/);
-                if (!match) return;
-                const [_, book, chapter, verseNum] = match;
-                rankHtml += `<li data-rank="${verseRank}" data-count="${count}"><span class="rank-number">${verseRank}.</span> <a href="#" class="search-rank-link" data-book="${book}" data-chapter="${chapter}" data-verse="${verseNum}" data-search-term="${searchTermStringForLinks}" data-partial-search="${usePartialSearch}">${verseRef}</a><span class="count">${count}</span><a class="density-link" data-type="verse" data-key="${verseRef}" data-count="${count}">(Dichte)</a></li>`;
-                rankHtml += getDetailCountHtml('verse', verseRef, searchTerm);
-            });
-            rankHtml += `</ul>${getShowMoreButton('verse', sortedVerses.length)}</div>`;
-            rankHtml += '</div>'; // Ende des .search-stats-wrapper
-        }
+             if (showSearchStatsCheckbox.checked && !bookFilter) {
+                 // Tab-Buttons
+                 rankHtml += `
+                     <div class="search-stats-tabs">
+                         <button class="tab-button active" data-table="book-rank-table">Bücher (${sortedBooks.length})</button>
+                         <button class="tab-button" data-table="chapter-rank-table">Kapitel (${sortedChapters.length})</button>
+                         <button class="tab-button" data-table="verse-rank-table">Verse (${sortedVerses.length})</button>
+                     </div>
+                 `;
+ 
+                 // Helferfunktion zum Erstellen einer sortierbaren Tabelle
+                 const createRankTable = (id, headers, data, type) => {
+                     let tableHtml = `<table id="${id}" class="search-rank-table ${type === 'book' ? '' : 'hidden'}"><thead><tr>`;
+                     headers.forEach(header => {
+                         tableHtml += `<th data-sort-key="${header.key}" data-sort-type="${header.type}">${header.label}</th>`;
+                     });
+                     tableHtml += '</tr></thead><tbody>';
+ 
+                     data.slice(0, 66).forEach((item, index) => {
+                         const [key, count] = item;
+                         let book, chapter, verseNum = 1;
+                         let linkText = key;
+ 
+                         if (type === 'book') {
+                             book = key;
+                             const bookInfo = bookChapterStructure.find(b => b.book === book);
+                             chapter = bookInfo ? bookInfo.chapters[0] : 1;
+                         } else if (type === 'chapter') {
+                             const match = key.match(/^(.+?)\s(\d+)$/);
+                             if (match) [_, book, chapter] = match;
+                         } else if (type === 'verse') {
+                             const match = key.match(/^(.+?)\s(\d+),(\d+)$/);
+                             if (match) [_, book, chapter, verseNum] = match;
+                         }
+ 
+                         tableHtml += `
+                             <tr>
+                                 <td>${index + 1}</td>
+                                 <td><a href="#" class="search-rank-link" data-book="${book}" data-chapter="${chapter}" data-verse="${verseNum}">${linkText}</a></td>
+                                 <td>${count}</td>
+                             </tr>
+                         `;
+                     });
+ 
+                     tableHtml += '</tbody></table>';
+                     return tableHtml;
+                 };
+ 
+                 // Tabelleninhalte erstellen
+                 const bookTableHeaders = [
+                     { label: 'Rang', key: 'rank', type: 'number' },
+                     { label: 'Buch', key: 'name', type: 'string' },
+                     { label: 'Treffer', key: 'count', type: 'number' }
+                 ];
+                 const chapterTableHeaders = [
+                     { label: 'Rang', key: 'rank', type: 'number' },
+                     { label: 'Kapitel', key: 'name', type: 'string' },
+                     { label: 'Treffer', key: 'count', type: 'number' }
+                 ];
+                 const verseTableHeaders = [
+                     { label: 'Rang', key: 'rank', type: 'number' },
+                     { label: 'Vers', key: 'name', type: 'string' },
+                     { label: 'Treffer', key: 'count', type: 'number' }
+                 ];
+ 
+                 rankHtml += createRankTable('book-rank-table', bookTableHeaders, sortedBooks, 'book');
+                 rankHtml += createRankTable('chapter-rank-table', chapterTableHeaders, sortedChapters, 'chapter');
+                 rankHtml += createRankTable('verse-rank-table', verseTableHeaders, sortedVerses, 'verse');
+             }
+ 
             const operator = searchMode === 'AND' ? ' ++ ' : ' + ';
             const searchTermString = Array.isArray(searchTerm) ? searchTerm.join(operator) : searchTerm;
             const headerText = bookFilter ? `Alle ${finalResults.length} Vorkommen von "${searchTermString}" im Buch ${bookFilter}` : `Suchergebnisse für "${searchTermString}" (${finalResults.length} Treffer in Versen)`;
             verseListHtml += `<h3>${headerText}</h3>`;
 
-        if (filteredResults.length === 0) {
-            verseListHtml += "<p>Keine Treffer gefunden.</p>";
-        } else {
-            // KORREKTUR: Erstelle eine kombinierte Regex zum Hervorheben aller Begriffe
-            const RESULTS_PAGE_SIZE = 66;
-
-            // Helferfunktion für Paginierung der Ergebnisliste
-            const getVerseListPaginationHtml = (offset, total) => `
-                <div class="verse-list-pagination">
-                    <button class="button" data-verse-page-offset="${Math.max(0, offset - RESULTS_PAGE_SIZE)}" ${offset === 0 ? 'disabled' : ''}>&laquo;</button>
-                    <span>Seite ${Math.floor(offset / RESULTS_PAGE_SIZE) + 1} von ${Math.ceil(total / RESULTS_PAGE_SIZE)}</span>
-                    <button class="button" data-verse-page-offset="${offset + RESULTS_PAGE_SIZE}" ${offset + RESULTS_PAGE_SIZE >= total ? 'disabled' : ''}>&raquo;</button>
-                </div>`;
-            const termsToHighlight = Array.isArray(searchTerm) ? searchTerm : [searchTerm];
-            const highlightPattern = termsToHighlight.map(term => {
-                const escaped = term.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
-                return usePartialSearch ? escaped : `\\b${escaped}\\b`;
-            }).join('|');
-            const highlightRegex = new RegExp(`(${highlightPattern})`, 'gi');
-            
-            verseListHtml += getVerseListPaginationHtml(verseListOffset, finalResults.length);
-
-            finalResults.slice(verseListOffset, verseListOffset + RESULTS_PAGE_SIZE).forEach(verse => {
-                // Ersetze den Suchbegriff durch eine hervorgehobene Version
-                const highlightedText = verse.text.replace(highlightRegex, '<span class="highlight">$1</span>');
-                verseListHtml += `
-                    <div class="search-result-item" data-book="${verse.book}" data-chapter="${verse.chapter}" data-verse="${verse.verse_num}">
-                        <a href="#" class="search-result-ref">${verse.book} ${verse.chapter},${verse.verse_num}</a>
-                        <div class="search-result-preview">${highlightedText}</div>
-                    </div>
-                `;
-            });
-
-            verseListHtml += getVerseListPaginationHtml(verseListOffset, finalResults.length);
-        }
+             if (filteredResults.length === 0) {
+                 verseListHtml += "<p>Keine Treffer gefunden.</p>";
+             } else {
+                 const RESULTS_PAGE_SIZE = 66;
+ 
+                 const getVerseListPaginationHtml = (offset, total) => `
+                     <div class="verse-list-pagination">
+                         <button class="button" data-verse-page-offset="${Math.max(0, offset - RESULTS_PAGE_SIZE)}" ${offset === 0 ? 'disabled' : ''}>&laquo;</button>
+                         <span>Seite ${Math.floor(offset / RESULTS_PAGE_SIZE) + 1} von ${Math.ceil(total / RESULTS_PAGE_SIZE)}</span>
+                         <button class="button" data-verse-page-offset="${offset + RESULTS_PAGE_SIZE}" ${offset + RESULTS_PAGE_SIZE >= total ? 'disabled' : ''}>&raquo;</button>
+                     </div>`;
+                 
+                 const termsToHighlight = Array.isArray(searchTerm) ? searchTerm : [searchTerm];
+                 const highlightPattern = termsToHighlight.map(term => {
+                     const escaped = term.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+                     return usePartialSearch ? escaped : `\\b${escaped}\\b`;
+                 }).join('|');
+                 const highlightRegex = new RegExp(`(${highlightPattern})`, 'gi');
+                 
+                 verseListHtml += getVerseListPaginationHtml(verseListOffset, finalResults.length);
+ 
+                 finalResults.slice(verseListOffset, verseListOffset + RESULTS_PAGE_SIZE).forEach(verse => {
+                     const highlightedText = verse.text.replace(highlightRegex, '<span class="highlight">$1</span>');
+                     verseListHtml += `
+                         <div class="search-result-item" data-book="${verse.book}" data-chapter="${verse.chapter}" data-verse="${verse.verse_num}">
+                             <a href="#" class="search-result-ref">${verse.book} ${verse.chapter},${verse.verse_num}</a>
+                             <div class="search-result-preview">${highlightedText}</div>
+                         </div>
+                     `;
+                 });
+ 
+                 verseListHtml += getVerseListPaginationHtml(verseListOffset, finalResults.length);
+             }
 
             verseTextDisplay.innerHTML = rankHtml + verseListHtml;
 
@@ -1110,16 +1183,6 @@ document.addEventListener('mainScriptReady', async () => {
             readingNavBottom.style.display = 'none';
             clearSearchButton.style.display = 'inline-block';
 
-            // Temporäre Speicherung der vollständigen, sortierten Listen für "Mehr anzeigen"
-            verseTextDisplay.dataset.sortedBooks = JSON.stringify(sortedBooks);
-            verseTextDisplay.dataset.sortedChapters = JSON.stringify(sortedChapters);
-            verseTextDisplay.dataset.sortedVerses = JSON.stringify(sortedVerses);
-            verseTextDisplay.dataset.searchTerm = Array.isArray(searchTerm) ? searchTerm.join('++') : searchTerm;
-            verseTextDisplay.dataset.usePartialSearch = usePartialSearch;
-            // NEU: Speichere Detail-Counts für die alternative Sortierung
-            verseTextDisplay.dataset.bookDetailCounts = JSON.stringify(bookDetailCounts);
-            verseTextDisplay.dataset.chapterDetailCounts = JSON.stringify(chapterDetailCounts);
-            verseTextDisplay.dataset.verseDetailCounts = JSON.stringify(verseDetailCounts);
         };
 
         // --- 4. Entscheiden, ob der Worker genutzt wird ---
@@ -1334,15 +1397,15 @@ document.addEventListener('mainScriptReady', async () => {
             const afterGapText = fullBlockText.substring(relativeGapEnd);
 
             let displayText;
-            const maxLength = 20000;
-            const previewChunk = 10000;
+            const maxLength = 2000; // Maximale Anzeigelänge
+            const previewChunk = 1000; // Länge des Anfangs- und Endteils
 
             if (gapText.length < maxLength) {
                 displayText = `${beforeGapText}<span class="gap-underline highlight-context">${gapText}</span>${afterGapText}`;
             } else {
                 const startPart = gapText.substring(0, previewChunk);
                 const endPart = gapText.substring(gapText.length - previewChunk);
-                displayText = `${beforeGapText}<span class="gap-underline highlight-context">${startPart}</span>...<span class="gap-underline highlight-context">${endPart}</span>${afterGapText}`;
+                displayText = `${beforeGapText}<span class="gap-underline highlight-context">${startPart}</span><span class="gap-ellipsis">...</span><span class="gap-underline highlight-context">${endPart}</span>${afterGapText}`;
             }
 
             const startRef = `${startVerse.book} ${startVerse.chapter},${startVerse.verse_num}`;
@@ -1746,8 +1809,8 @@ document.addEventListener('mainScriptReady', async () => {
         // Die Initialisierung des Lesemodus wird nun in setQuizModeUI angepasst.
         const selectedTestament = document.querySelector('input[name="testament"]:checked').value;
         const books = [...new Set(allVerses.filter(v => v.testament === selectedTestament).map(v => v.book))];
-        const canonicalOrder = [...new Set(allVerses.map(v => v.book))];
-        books.sort((a, b) => canonicalOrder.indexOf(a) - canonicalOrder.indexOf(b));
+        // KORREKTUR: Verwende die neue, unveränderliche `canonicalBookOrder` für die Sortierung.
+        books.sort((a, b) => canonicalBookOrder.indexOf(a) - canonicalBookOrder.indexOf(b));
         populateSelect(bookSelect, books, "Buch");
         
         // Update für den Buch-Slider
@@ -2527,6 +2590,48 @@ document.addEventListener('mainScriptReady', async () => {
                 }, 100); // 100ms sollten reichen, damit der DOM gerendert ist
             }
         }
+
+        // Klick auf einen Tab-Button in der Suchstatistik
+        const tabButton = e.target.closest('.tab-button');
+        if (tabButton) {
+            e.preventDefault();
+            document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active'));
+            tabButton.classList.add('active');
+            document.querySelectorAll('.search-rank-table').forEach(table => table.classList.add('hidden'));
+            document.getElementById(tabButton.dataset.table).classList.remove('hidden');
+        }
+
+        // Klick auf einen sortierbaren Tabellenkopf
+        const sortableHeader = e.target.closest('.search-rank-table th[data-sort-key]');
+        if (sortableHeader) {
+            e.preventDefault();
+            const table = sortableHeader.closest('table');
+            const tbody = table.querySelector('tbody');
+            const rows = Array.from(tbody.querySelectorAll('tr'));
+            const sortKey = sortableHeader.dataset.sortKey;
+            const sortType = sortableHeader.dataset.sortType;
+            const currentOrder = sortableHeader.dataset.sortOrder || 'desc';
+            const newOrder = currentOrder === 'asc' ? 'desc' : 'asc';
+
+            rows.sort((a, b) => {
+                const valA = a.cells[sortKey === 'name' ? 1 : (sortKey === 'count' ? 2 : 0)].textContent;
+                const valB = b.cells[sortKey === 'name' ? 1 : (sortKey === 'count' ? 2 : 0)].textContent;
+
+                let comparison = 0;
+                if (sortType === 'number') {
+                    comparison = parseInt(valA, 10) - parseInt(valB, 10);
+                } else {
+                    comparison = valA.localeCompare(valB, 'de');
+                }
+                return newOrder === 'asc' ? comparison : -comparison;
+            });
+
+            table.querySelectorAll('th').forEach(th => th.removeAttribute('data-sort-order'));
+            sortableHeader.dataset.sortOrder = newOrder;
+
+            tbody.innerHTML = '';
+            rows.forEach(row => tbody.appendChild(row));
+        }
     });
 
     // NEU: Funktion zum Auf-/Zuklappen der Suchergebnis-Details
@@ -2575,170 +2680,6 @@ document.addEventListener('mainScriptReady', async () => {
             performSearch({ isPagination: true }); // Führe die Suche mit dem neuen Offset erneut durch
         }
 
-        if (showMoreButton) {
-            e.preventDefault();
-            const type = showMoreButton.dataset.rankType;
-            const listElement = document.getElementById(`rank-list-${type}`);
-            const currentCount = searchRankVisibleCounts[type];
-
-
-            const allItems = JSON.parse(verseTextDisplay.dataset[`sorted${type.charAt(0).toUpperCase() + type.slice(1)}s`]);
-            
-            if (currentCount < allItems.length) {
-                const [key, count] = allItems[currentCount];
-                const searchTermString = verseTextDisplay.dataset.searchTerm;
-                const usePartialSearch = verseTextDisplay.dataset.usePartialSearch === 'true';
-
-                // KORREKTUR: Rekonstruiere searchMode und searchTerm Array aus dem String
-                const isAndSearch = searchTermString.includes('++');
-                const searchTerms = searchTermString.split(isAndSearch ? '++' : '+').map(t => t.trim()).filter(Boolean);
-
-                const lastLi = listElement.querySelector('li:last-child');
-                const lastRank = lastLi ? parseInt(lastLi.dataset.rank, 10) : 0;
-                const lastCount = lastLi ? parseInt(lastLi.dataset.count, 10) : -1;
-                const newRank = count === lastCount ? lastRank : currentCount + 1;
-
-                // NEU: Detail-Counts für nachgeladene Elemente hinzufügen
-                const bookDetails = JSON.parse(verseTextDisplay.dataset.bookDetailCounts);
-                const chapterDetails = JSON.parse(verseTextDisplay.dataset.chapterDetailCounts);
-                const verseDetails = JSON.parse(verseTextDisplay.dataset.verseDetailCounts);
-                let detailHtml = '';
-                if (isAndSearch && searchTerms.length > 1) {
-                    const detailData = type === 'book' ? bookDetails[key] : (type === 'chapter' ? chapterDetails[key] : verseDetails[key]);
-                    if (detailData) {
-                        const details = searchTerms.map(term => `${term}: ${detailData[term] || 0}`).join(', ');
-                        detailHtml = ` <span class="detail-counts">(${details})</span>`;
-                    }
-                }
-                let newLiHtml = `<li data-rank="${newRank}" data-count="${count}"><span class="rank-number">${newRank}.</span> `;
-                if (type === 'book') {
-                    newLiHtml += `<a href="#" class="search-rank-link book-rank" data-book="${key}" data-search-term="${searchTermString}" data-partial-search="${usePartialSearch}">${key}</a>`;
-                } else {
-                    const isVerse = type === 'verse';
-                    const match = isVerse ? key.match(/^(.+?)\s(\d+),(\d+)$/) : key.match(/^(.+?)\s(\d+)$/);
-                    if (match) {
-                        const [_, book, chapter, verseNum] = match;
-                        newLiHtml += `<a href="#" class="search-rank-link" data-book="${book}" data-chapter="${chapter}" data-verse="${verseNum || 1}" data-search-term="${searchTermString}" data-partial-search="${usePartialSearch}">${key}</a>`;
-                    }
-                }
-                newLiHtml += `<span class="count">${count}</span><a class="density-link" data-type="${type}" data-key="${key}" data-count="${count}">(Dichte)</a>${detailHtml}</li>`;
-                
-                listElement.insertAdjacentHTML('beforeend', newLiHtml);
-                searchRankVisibleCounts[type]++;
-
-                // Button ausblenden, wenn das Ende erreicht ist
-                if (searchRankVisibleCounts[type] >= allItems.length) {
-                    showMoreButton.style.display = 'none';
-                }
-            }
-        }
-    });
-    // NEU: Event-Listener für den Sortier-Umschalt-Button
-    verseTextDisplay.addEventListener('click', (e) => {
-        const sortButton = e.target.closest('#toggle-rank-sort-button');
-        if (!sortButton) return;
-
-        e.preventDefault();
-        const currentMode = sortButton.dataset.sortMode;
-        const newMode = currentMode === 'sum' ? 'min' : 'sum';
-        sortButton.dataset.sortMode = newMode;
-        sortButton.textContent = newMode === 'min' ? 'Nach Summe sortieren' : 'Nach Minimum sortieren';
-
-        // Lade die Originaldaten aus dem Dataset
-        const originalBooks = JSON.parse(verseTextDisplay.dataset.sortedBooks);
-        const originalChapters = JSON.parse(verseTextDisplay.dataset.sortedChapters);
-        const originalVerses = JSON.parse(verseTextDisplay.dataset.sortedVerses);
-        const bookDetails = JSON.parse(verseTextDisplay.dataset.bookDetailCounts);
-        const chapterDetails = JSON.parse(verseTextDisplay.dataset.chapterDetailCounts);
-        const verseDetails = JSON.parse(verseTextDisplay.dataset.verseDetailCounts);
-        const searchTerms = verseTextDisplay.dataset.searchTerm.split('++');
-
-        const reSort = (originalList, detailList) => {
-            // KORREKTUR: Erstelle eine Kopie, um die Originaldaten nicht zu verändern.
-            const listCopy = [...originalList];
-            if (newMode === 'sum') {
-                // KORREKTUR: Sortiere explizit nach der Summe (dem zweiten Element im Array, `b[1] - a[1]`),
-                // um die ursprüngliche Reihenfolge zuverlässig wiederherzustellen.
-                listCopy.sort((a, b) => b[1] - a[1]);
-                return listCopy;
-            }
-            // Sortiere nach Minimum
-            listCopy.sort((a, b) => {
-                const keyA = a[0];
-                const keyB = b[0];
-                const detailsA = detailList[keyA];
-                const detailsB = detailList[keyB];
-
-                const minA = detailsA ? Math.min(...searchTerms.map(term => detailsA[term] || 0)) : 0;
-                const minB = detailsB ? Math.min(...searchTerms.map(term => detailsB[term] || 0)) : 0;
-
-                // Wenn die Minimalwerte gleich sind, sortiere sekundär nach der Gesamtsumme.
-                if (minB - minA === 0) {
-                    return b[1] - a[1];
-                }
-                return minB - minA;
-            });
-            return listCopy;
-        };
-
-        const newSortedBooks = reSort([...originalBooks], bookDetails);
-        const newSortedChapters = reSort([...originalChapters], chapterDetails);
-        const newSortedVerses = reSort([...originalVerses], verseDetails);
-
-        // Zeichne die Listen neu
-        const redrawList = (type, sortedData, detailList) => {
-            const listElement = document.getElementById(`rank-list-${type}`);
-            if (!listElement) return;
-
-            // Nur die ersten 10 Elemente neu zeichnen
-            const visibleCount = searchRankVisibleCounts[type];
-            const itemsToShow = sortedData.slice(0, visibleCount);
-            let listHtml = '';
-            let lastSortValue = -1, rank = 0;
-
-            // KORREKTUR: Helferfunktion für Detail-Counts hier verfügbar machen
-            const getDetailCountHtml = (type, key, terms) => {
-                if (newMode !== 'sum' && newMode !== 'min') return ''; // Nur bei UND-Suche
-                const details = detailList[key];
-                if (!details) return '';
-                const detailString = terms.map(term => `${term}: ${details[term] || 0}`).join(', ');
-                return ` <span class="detail-counts">(${detailString})</span>`;
-            };
-            // KORREKTUR: HTML neu aufbauen, anstatt altes zu kopieren
-            itemsToShow.forEach(([key, count], index) => {
-                const currentSortValue = newMode === 'min' ? (detailList[key] ? Math.min(...searchTerms.map(term => detailList[key][term] || 0)) : 0) : count;
-                
-                if (currentSortValue !== lastSortValue) { rank = index + 1; }
-                lastSortValue = currentSortValue;
-
-                const detailHtml = getDetailCountHtml(type, key, searchTerms); // Rufe die Helferfunktion auf
-                
-                // NEU: Bestimme, welche Zahl groß und welche klein angezeigt wird
-                const mainCount = newMode === 'min' ? currentSortValue : count;
-                const secondaryCountHtml = newMode === 'min' ? ` <span class="count-secondary">(Summe: ${count})</span>` : '';
-
-                let newLiHtml = `<li data-rank="${rank}" data-count="${count}"><span class="rank-number">${rank}.</span> `;
-                if (type === 'book') {
-                    newLiHtml += `<a href="#" class="search-rank-link book-rank" data-book="${key}" data-search-term="${verseTextDisplay.dataset.searchTerm}" data-partial-search="${verseTextDisplay.dataset.usePartialSearch}">${key}</a>`;
-                } else {
-                    const isVerse = type === 'verse';
-                    const match = isVerse ? key.match(/^(.+?)\s(\d+),(\d+)$/) : key.match(/^(.+?)\s(\d+)$/);
-                    if (match) {
-                        const [_, book, chapter, verseNum] = match;
-                        newLiHtml += `<a href="#" class="search-rank-link" data-book="${book}" data-chapter="${chapter}" data-verse="${verseNum || 1}" data-search-term="${verseTextDisplay.dataset.searchTerm}" data-partial-search="${verseTextDisplay.dataset.usePartialSearch}">${key}</a>`;
-                    }
-                }
-                // KORREKTUR: Füge die neue Zähl-Logik ein
-                newLiHtml += `<span class="count">${mainCount}</span>${secondaryCountHtml}<a class="density-link" data-type="${type}" data-key="${key}" data-count="${count}">(Dichte)</a>${detailHtml}</li>`;
-                listHtml += newLiHtml;
-            });
-
-            listElement.innerHTML = listHtml;
-        };
-        
-        redrawList('book', newSortedBooks, bookDetails);
-        redrawList('chapter', newSortedChapters, chapterDetails);
-        redrawList('verse', newSortedVerses, verseDetails);
     });
     // KORREKTUR: Event-Listener für die On-Demand-Dichte-ANZEIGE
     verseTextDisplay.addEventListener('click', (e) => {
@@ -2794,21 +2735,29 @@ document.addEventListener('mainScriptReady', async () => {
     testamentRadios.forEach(radio => radio.addEventListener('change', () => {
         if (DEBUG_SYNC) console.log(`[SyncDebug] Event: Testament radio changed to ${radio.value}`);
         if (isUpdating) return;
+
+        // KORREKTUR: Setze die Auswahl gezielt auf den Anfang des gewählten Testaments.
+        const selectedTestament = document.querySelector('input[name="testament"]:checked').value;
+
         isUpdating = true;
         updateBookDropdown();
-        // Setze die Auswahl explizit auf den Anfang des Testaments zurück.
-        selectFirstAvailableOption(bookSelect);
+
+        if (selectedTestament === 'AT') {
+            bookSelect.value = '1. Mose';
+        } else { // NT
+            bookSelect.value = 'Matthäus';
+        }
+
         updateChapterDropdown();
-        selectFirstAvailableOption(chapterSelect);
+        chapterSelect.value = '1';
         updateVerseDropdown();
-        selectFirstAvailableOption(verseSelect);
+        verseSelect.value = '1';
+
         isUpdating = false;
-        // KORREKTUR: Nach der Aktualisierung der Dropdowns muss die Position synchronisiert werden.
         syncSelectionToPosition();
 
-        // NEU: Wenn im Lesemodus, aktualisiere die Leseansicht auf das neue Kapitel.
+        // Wenn im Lesemodus, aktualisiere die Ansicht auf das neue Kapitel.
         if (quizMode === 'readMode') {
-            // Lese die neuen Werte aus den gerade aktualisierten Dropdowns.
             displayReadingChapter(bookSelect.value, chapterSelect.value);
         }
     }));
@@ -3197,6 +3146,7 @@ document.addEventListener('mainScriptReady', async () => {
         loadAndParseHeadings(),
         loadAndParseSummaries(), // NEU: Lade auch die Zusammenfassungen
         loadAndParseMcQuestions() // NEU: Lade die Multiple-Choice-Fragen
+
     ]);
 
     if (versesSuccess) {
@@ -3206,4 +3156,75 @@ document.addEventListener('mainScriptReady', async () => {
     } else {
         verseTextDisplay.textContent = "Fehler: Die Bibelverse konnten nicht geladen werden. Das Spiel kann nicht gestartet werden.";
     }
+
+    // KORREKTUR: Event-Listener für das Popup muss außerhalb der if-Bedingung sein,
+    // da er auch im Lesemodus funktionieren muss.
+    // Der Event-Listener wird an ein übergeordnetes, immer vorhandenes Element gehängt.
+    document.getElementById('bible-quiz-view').addEventListener('click', (e) => { // KORREKTUR: Ein einziger Event-Listener für die gesamte Ansicht
+        // --- Event-Handler für manuelle Querverweis-Links ---
+        const manualLink = e.target.closest('a.manual-cross-ref-link');
+        const identicalLink = e.target.closest('a.identical-verse-link');
+        if (!manualLink && !identicalLink) return;
+
+        e.preventDefault();
+        let verseIds = [];
+        let popupTitle = '';
+
+        // Entferne existierende Popups
+        const existingPopup = document.querySelector('.cross-ref-popup');
+        if (existingPopup) {
+            existingPopup.remove();
+        }
+
+        // Erstelle das Popup
+        const popup = document.createElement('div');
+        popup.className = 'cross-ref-popup';
+
+        if (manualLink) {
+            const refId = manualLink.dataset.refId;
+            verseIds = manualCrossReferenceMap[refId] || [];
+            const displayRefId = refId.split('-').pop();
+            popupTitle = `Manuelle Querverweise für [§${displayRefId}]`;
+        } else if (identicalLink) {
+            const textKey = identicalLink.dataset.textKey;
+            verseIds = identicalVerseMap[textKey] || [];
+            popupTitle = `Identische Verse`;
+        }
+
+        if (verseIds.length > 1) {
+            let listHtml = `<h4>${popupTitle}</h4><ul>`;
+            verseIds.forEach(id => {
+                const verse = allVerses.find(v => v.id === id);
+                if (verse) {
+                    // Markiere den aktuellen Vers, falls er in der Liste ist
+                    const isCurrent = currentVerse && currentVerse.id === id;
+                    listHtml += `<li class="${isCurrent ? 'current' : ''}"><a href="#" class="popup-verse-link" data-book="${verse.book}" data-chapter="${verse.chapter}" data-verse="${verse.verse_num}">${verse.book} ${verse.chapter},${verse.verse_num}</a></li>`;
+                }
+            });
+            listHtml += '</ul>';
+            popup.innerHTML = listHtml;
+        } else {
+            popup.innerHTML = '<h4>Keine weiteren Querverweise gefunden.</h4>';
+        }
+
+        document.body.appendChild(popup);
+
+        // Positioniere das Popup neben dem geklickten Link
+        const rect = (manualLink || identicalLink).getBoundingClientRect();
+        popup.style.left = `${window.scrollX + rect.left}px`;
+        popup.style.top = `${window.scrollY + rect.bottom + 5}px`;
+
+        // Klick-Handler für die Links im Popup
+        popup.addEventListener('click', (popupEvent) => {
+            const verseLink = popupEvent.target.closest('a.popup-verse-link');
+            if (verseLink) {
+                popupEvent.preventDefault();
+                setQuizModeUI('readMode'); // Wechsle in den Lesemodus
+                displayReadingChapter(verseLink.dataset.book, verseLink.dataset.chapter);
+                setTimeout(() => highlightAndScrollToVerse(verseLink.dataset.verse), 100);
+            }
+            popup.remove(); // Schließe das Popup nach dem Klick
+        });
+        // Ende des Querverweis-Handlers
+    });
 });

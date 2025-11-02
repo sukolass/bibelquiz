@@ -457,6 +457,8 @@
                             <input type="checkbox" id="show-search-stats-checkbox">
                             Statistiken anzeigen (Vorkommen nach Buch/Kapitel/Vers)
                         </label>
+                        <!-- NEU: Button für die Statistik-Seite -->
+                        <button id="open-stats-modal-button" class="button" style="margin-top: 15px;">Text-Statistiken anzeigen</button>
                         <!-- NEU: Suchfunktion für den Lese-Modus -->
                         <div id="reading-search-container" style="margin-top: 15px; display: flex; gap: 5px;">
                             <input type="text" id="search-input" placeholder="Suche in der Bibel..." style="flex-grow: 1;">
@@ -595,17 +597,62 @@
             </div>
         </div>
     </div>
+    
+    <!-- NEU: Modal für die Statistik-Ansicht -->
+    <div id="stats-modal" class="modal">
+        <div class="modal-content large">
+            <span class="close-button" id="close-stats-modal-button">&times;</span>
+            <h2>Bibel-Statistiken</h2>
+            <p id="stats-scope-info">Statistiken für den gesamten Text. Wähle einen Bereich, um die Ansicht zu filtern.</p>
+            <div class="stats-tabs">
+                <button class="stats-tab-button active" data-tab="book-stats">Bücher</button>
+                <button class="stats-tab-button" data-tab="chapter-stats">Kapitel</button>
+                <button class="stats-tab-button" data-tab="verse-stats">Verse</button>
+            </div>
+            <div id="book-stats" class="stats-tab-content active">
+                <table>
+                    <thead>
+                        <tr>
+                            <th data-sort="book" class="sortable">Buch &#x2195;</th>
+                            <th data-sort="verseCount" class="sortable">Verse &#x2195;</th>
+                            <th data-sort="charCount" class="sortable">Zeichen &#x2195;</th>
+                            <th data-sort="density" class="sortable">Dichte (Zeichen/Vers) &#x2195;</th>
+                        </tr>
+                    </thead>
+                    <tbody id="book-stats-table-body"></tbody>
+                </table>
+            </div>
+            <div id="chapter-stats" class="stats-tab-content">
+                 <table>
+                    <thead>
+                        <tr>
+                            <th data-sort="chapter" class="sortable">Kapitel &#x2195;</th>
+                            <th data-sort="verseCount" class="sortable">Verse &#x2195;</th>
+                            <th data-sort="charCount" class="sortable">Zeichen &#x2195;</th>
+                            <th data-sort="density" class="sortable">Dichte (Zeichen/Vers) &#x2195;</th>
+                        </tr>
+                    </thead>
+                    <tbody id="chapter-stats-table-body"></tbody>
+                </table>
+            </div>
+            <div id="verse-stats" class="stats-tab-content">
+                <table>
+                   <thead>
+                       <tr>
+                           <th data-sort="ref" class="sortable">Vers &#x2195;</th>
+                           <th data-sort="charCount" class="sortable">Zeichen &#x2195;</th>
+                       </tr>
+                   </thead>
+                   <tbody id="verse-stats-table-body"></tbody>
+               </table>
+           </div>
+        </div>
+    </div>
 
-
-
-    <!-- Skripte -->
-    <!-- HINZUFÜGEN: Cordova-Skript. Muss VOR Ihren anderen Skripten stehen. -->
-    <script src="cordova.js"></script>
-    <script src="socket.io/socket.io.js"></script>
-    <script src="client.js"></script>
-    <!-- FÜR MULTIPLAYER: Die folgenden zwei Zeilen wieder einkommentieren, um den Multiplayer-Modus zu aktivieren. -->
-    <!-- <script src="socket.io/socket.io.js"></script> -->
-    <!-- <script src="client.js"></script> -->
-    <script src="bibelquiz.js"></script>
+     <!-- Skripte -->
+     <script src="cordova.js"></script>
+     <script src="socket.io/socket.io.js"></script>
+     <script src="client.js"></script>
+     <script src="bibelquiz.js"></script>
 </body>
 </html>
